@@ -4,7 +4,7 @@
   "description": "MCP communication security filter for Claude Code — ちゃんと見てヨシッ！",
   "main": "src/checker.js",
   "bin": {
-    "mcp-yoshi": "./bin/mcp-yoshi.js"
+    "mcp-yoshi": "bin/mcp-yoshi.js"
   },
   "scripts": {
     "test": "node test/run.js"
