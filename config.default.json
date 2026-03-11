@@ -1,0 +1,29 @@
+{
+  "logDir": "~/.mcp-yoshi/logs",
+  "logLevel": "info",
+  "checks": {
+    "outbound": {
+      "apiKeys": true,
+      "privateKeys": true,
+      "highEntropy": true,
+      "envValues": true,
+      "pii": true
+    },
+    "inbound": {
+      "promptInjection": true,
+      "shellCommands": true,
+      "suspiciousUrls": true,
+      "scriptInjection": true,
+      "toolTampering": true
+    }
+  },
+  "servers": {
+    "*": { "enabled": true }
+  },
+  "customPatterns": [],
+  "allowlist": [],
+  "severity": {
+    "WARN": ["highEntropy", "pii"],
+    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands"]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "mcp-yoshi",
+  "version": "1.0.0",
+  "description": "MCP communication security filter for Claude Code — ちゃんと見てヨシッ！",
+  "main": "src/checker.js",
+  "bin": {
+    "mcp-yoshi": "./bin/mcp-yoshi.js"
+  },
+  "scripts": {
+    "test": "node test/run.js"
+  },
+  "keywords": [
+    "mcp",
+    "security",
+    "claude-code",
+    "hooks",
+    "filter"
+  ],
+  "author": "aliksir",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "config.default.json",
+    "LICENSE",
+    "README.md"
+  ]
+}
