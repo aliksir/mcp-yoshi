@@ -5,9 +5,7 @@ const path = require('path');
 const { resolveLogDir } = require('./config');
 
 function ensureDir(dir) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  fs.mkdirSync(dir, { recursive: true });
 }
 
 function getLogFilePath(logDir) {

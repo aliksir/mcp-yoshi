@@ -38,13 +38,14 @@ const CHECKS = {
     id: 'OUT-003',
     name: 'High Entropy String',
     check: (text) => {
-      // 32文字以上の高ランダム文字列（Base64/Hex）を検出
+      // 32文字以上の高ランダム文字列（Base64/Hex）を検出（最大50件で打ち切り）
       const matches = text.match(/[A-Za-z0-9+/=_-]{32,}/g) || [];
       const findings = [];
-      for (const m of matches) {
+      for (const m of matches.slice(0, 50)) {
         const entropy = calcEntropy(m);
         if (entropy > 4.5 && m.length >= 32) {
           findings.push({ matched: mask(m), entropy: entropy.toFixed(2) });
+          break; // 1件見つかれば十分
         }
       }
       return findings;

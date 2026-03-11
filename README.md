@@ -106,7 +106,7 @@ mcp-yoshi config
   },
   "severity": {
     "WARN": ["highEntropy", "pii", "suspiciousUrls"],
-    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands"]
+    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands", "scriptInjection", "toolTampering", "envValues"]
   }
 }
 ```

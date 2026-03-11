@@ -1,21 +1,28 @@
 // メインチェックロジック: stdin からhookデータを受け取り、判定結果を出力
 
 const { loadConfig, getServerConfig, parseServerName } = require('./config');
-const { runOutboundChecks } = require('./checks/outbound');
-const { runInboundChecks } = require('./checks/inbound');
+const { runOutboundChecks, CHECKS: OUTBOUND_CHECKS } = require('./checks/outbound');
+const { runInboundChecks, CHECKS: INBOUND_CHECKS } = require('./checks/inbound');
 const { log } = require('./logger');
 
+// CHECK_ID_MAP を CHECKS 定義から自動構築（二重管理の排除）
+const CHECK_ID_MAP = {};
+for (const [name, def] of Object.entries({ ...OUTBOUND_CHECKS, ...INBOUND_CHECKS })) {
+  CHECK_ID_MAP[def.id] = name;
+}
+
 function determineSeverity(config, findings) {
+  if (findings.length === 0) return 'PASS';
+
   const blockChecks = new Set(config.severity.BLOCK || []);
   const warnChecks = new Set(config.severity.WARN || []);
 
   let maxSeverity = 'PASS';
 
   for (const finding of findings) {
-    // finding.id から checkName を逆引き
-    const checkName = findCheckName(finding.id);
+    const checkName = CHECK_ID_MAP[finding.id] || 'unknown';
     if (blockChecks.has(checkName)) {
-      return 'BLOCK'; // 即座にBLOCK
+      return 'BLOCK';
     }
     if (warnChecks.has(checkName)) {
       maxSeverity = 'WARN';
@@ -23,36 +30,22 @@ function determineSeverity(config, findings) {
   }
 
   // severity に明示されていない finding がある場合は WARN 扱い
-  if (maxSeverity === 'PASS' && findings.length > 0) {
+  if (maxSeverity === 'PASS') {
     maxSeverity = 'WARN';
   }
 
   return maxSeverity;
 }
 
-const CHECK_ID_MAP = {
-  'OUT-001': 'apiKeys',
-  'OUT-002': 'privateKeys',
-  'OUT-003': 'highEntropy',
-  'OUT-004': 'envValues',
-  'OUT-005': 'pii',
-  'IN-001': 'promptInjection',
-  'IN-002': 'shellCommands',
-  'IN-003': 'suspiciousUrls',
-  'IN-004': 'scriptInjection',
-  'IN-005': 'toolTampering',
-};
-
-function findCheckName(id) {
-  return CHECK_ID_MAP[id] || 'unknown';
-}
+const MAX_TEXT_LENGTH = 100000; // 100KB上限
 
 function flattenToString(obj) {
-  if (typeof obj === 'string') return obj;
-  if (obj === null || obj === undefined) return '';
-  if (Array.isArray(obj)) return obj.map(flattenToString).join(' ');
-  if (typeof obj === 'object') return Object.values(obj).map(flattenToString).join(' ');
-  return String(obj);
+  try {
+    const str = typeof obj === 'string' ? obj : JSON.stringify(obj) || '';
+    return str.length > MAX_TEXT_LENGTH ? str.slice(0, MAX_TEXT_LENGTH) : str;
+  } catch {
+    return String(obj);
+  }
 }
 
 function checkOutbound(hookData, config) {

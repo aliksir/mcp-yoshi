@@ -20,10 +20,8 @@
   "servers": {
     "*": { "enabled": true }
   },
-  "customPatterns": [],
-  "allowlist": [],
   "severity": {
-    "WARN": ["highEntropy", "pii"],
-    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands"]
+    "WARN": ["highEntropy", "pii", "suspiciousUrls"],
+    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands", "scriptInjection", "toolTampering", "envValues"]
   }
 }

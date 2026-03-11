@@ -9,11 +9,11 @@ function loadConfig() {
   const defaults = JSON.parse(fs.readFileSync(DEFAULT_CONFIG_PATH, 'utf8'));
   let userConfig = {};
 
-  if (fs.existsSync(USER_CONFIG_PATH)) {
-    try {
-      userConfig = JSON.parse(fs.readFileSync(USER_CONFIG_PATH, 'utf8'));
-    } catch {
-      // ユーザー設定が壊れている場合はデフォルトにフォールバック
+  try {
+    userConfig = JSON.parse(fs.readFileSync(USER_CONFIG_PATH, 'utf8'));
+  } catch (e) {
+    if (e.code !== 'ENOENT') {
+      process.stderr.write(`[mcp-yoshi] Warning: ${USER_CONFIG_PATH} の読み込みに失敗しました。デフォルト設定を使用します\n`);
     }
   }
 
