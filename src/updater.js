@@ -46,7 +46,7 @@ function compareVersions(current, latest) {
 
 async function checkUpdate() {
   const current = pkg.version;
-  const latest = await fetchLatestVersion();
+  const latest = await module.exports.fetchLatestVersion();
 
   if (latest === null) {
     return { current, latest: null, status: 'not-published' };
