@@ -116,12 +116,15 @@ function mask(str) {
 function runOutboundChecks(text, enabledChecks) {
   const findings = [];
 
+  // P2: NFKC正規化（難読化回避対策）
+  const normalizedText = text.normalize('NFKC');
+
   for (const [checkName, check] of Object.entries(CHECKS)) {
     if (!enabledChecks[checkName]) continue;
 
     if (check.check) {
       // カスタムチェック関数
-      const results = check.check(text);
+      const results = check.check(normalizedText);
       for (const result of results) {
         findings.push({
           id: check.id,
@@ -132,7 +135,7 @@ function runOutboundChecks(text, enabledChecks) {
     } else if (check.patterns) {
       // パターンマッチ
       for (const pattern of check.patterns) {
-        const match = text.match(pattern);
+        const match = normalizedText.match(pattern);
         if (match) {
           findings.push({
             id: check.id,
