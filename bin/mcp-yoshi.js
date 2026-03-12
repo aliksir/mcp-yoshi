@@ -4,6 +4,7 @@ const { run } = require('../src/checker');
 const { init, uninstall } = require('../src/setup');
 const { loadConfig, addToAllowlist, removeFromAllowlist, listAllowlist } = require('../src/config');
 const { readLogs } = require('../src/logger');
+const { checkUpdate, runUpdate } = require('../src/updater');
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -30,6 +31,7 @@ Usage:
   mcp-yoshi allow <server> --reason "理由"          allowlistにサーバーを追加
   mcp-yoshi allow --list                            allowlist一覧を表示
   mcp-yoshi allow --remove <server>                 allowlistからサーバーを削除
+  mcp-yoshi update [--check]                         アップデート確認・実行
   mcp-yoshi --version                                バージョン表示
   mcp-yoshi --help                                   このヘルプ
 `);
@@ -120,6 +122,39 @@ switch (command) {
       const entry = addToAllowlist(server, reason);
       console.log(`${server} をallowlistに追加しました（理由: ${entry.reason || 'なし'}）`);
     }
+    break;
+  }
+  case 'update': {
+    const checkOnly = hasFlag('--check');
+    checkUpdate().then((result) => {
+      if (result.status === 'not-published') {
+        console.log(`現在のバージョン: v${result.current}`);
+        console.log('npm に未公開のため、アップデート確認ができません');
+        console.log('GitHub からの手動更新: git pull origin master');
+      } else if (result.status === 'up-to-date') {
+        console.log(`✅ 最新です (v${result.current})`);
+      } else if (result.status === 'update-available') {
+        console.log(`🆕 アップデートがあります: v${result.current} → v${result.latest}`);
+        if (checkOnly) {
+          console.log('実行するには: mcp-yoshi update');
+        } else {
+          console.log('アップデートを実行します...');
+          try {
+            runUpdate();
+            console.log(`✅ v${result.latest} にアップデートしました`);
+          } catch (e) {
+            console.error('アップデートに失敗しました。手動で実行してください:');
+            console.error('  npm install -g mcp-yoshi@latest');
+            process.exit(1);
+          }
+        }
+      } else if (result.status === 'ahead') {
+        console.log(`現在のバージョン (v${result.current}) はnpm公開版 (v${result.latest}) より新しいです`);
+      }
+    }).catch((err) => {
+      console.error(`アップデート確認に失敗しました: ${err.message}`);
+      process.exit(1);
+    });
     break;
   }
   case 'config':

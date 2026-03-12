@@ -457,6 +457,18 @@ const os = require('os');
   fs.rmSync(tmpDir, { recursive: true });
 }
 
+// === Updater ===
+console.log('\n=== Updater ===');
+{
+  const { compareVersions } = require('../src/updater');
+
+  assert(compareVersions('1.0.0', '1.0.0') === 0, 'compareVersions: same version returns 0');
+  assert(compareVersions('1.0.0', '1.1.0') === 1, 'compareVersions: latest is newer returns 1');
+  assert(compareVersions('2.0.0', '1.9.9') === -1, 'compareVersions: current is newer returns -1');
+  assert(compareVersions('1.0.0', '1.0.1') === 1, 'compareVersions: patch version diff');
+  assert(compareVersions('v1.0.0', '1.0.0') === 0, 'compareVersions: handles v prefix');
+}
+
 // === Summary ===
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 process.exit(failed > 0 ? 1 : 0);
