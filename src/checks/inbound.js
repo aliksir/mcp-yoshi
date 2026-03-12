@@ -1,5 +1,9 @@
 // インバウンドチェック: 受信データから攻撃パターンを検出
 
+// P1: ASCII Smuggling — U+E0000台不可視文字 + Zero-Width文字の検出
+const ASCII_SMUGGLING_PATTERN = /[\u{E0000}-\u{E007F}]/u;
+const ZERO_WIDTH_PATTERN = /[\u200B\u200C\u200D\uFEFF\u2060]/;
+
 const CHECKS = {
   promptInjection: {
     id: 'IN-001',
@@ -48,6 +52,10 @@ const CHECKS = {
       /https?:\/\/(bit\.ly|tinyurl\.com|t\.co|goo\.gl|ow\.ly|is\.gd|buff\.ly)\//i,
       // IPアドレス直接アクセス（内部ネットワーク）
       /https?:\/\/(10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)/,
+      // P6: クラウドメタデータURL（SSRF拡張）
+      /169\.254\.169\.254/,
+      /metadata\.google\.internal/i,
+      /100\.100\.100\.200/,  // Alibaba Cloud metadata
     ],
   },
 
@@ -78,25 +86,98 @@ const CHECKS = {
       /\bwithout\s+(the\s+)?(user|human)'?s?\s+(knowledge|consent|awareness)/i,
       /\bexfiltrate\b/i,
       /\bphone\s*home\b/i,
+      // P4: Tool Poisoning追加パターン（5件）
+      /\bbefore\s+(executing|running|calling)\s+any\s+(tool|function|action)/i,
+      /\bread\s+~?\/?\.ssh\//i,
+      /\boverride\s+(all\s+)?instructions?\b/i,
+      /\bforget\s+(all\s+)?previous\b/i,
+      /\bIMPORTANT\s*:\s*Before\s+any\s+action/i,
     ],
+  },
+
+  // P1: ASCII Smuggling検出
+  asciiSmuggling: {
+    id: 'IN-006',
+    name: 'ASCII Smuggling',
+    check: (text) => {
+      const findings = [];
+      if (ASCII_SMUGGLING_PATTERN.test(text)) {
+        findings.push({ matched: 'Unicode Tags Block (U+E0000-E007F)' });
+      }
+      if (ZERO_WIDTH_PATTERN.test(text)) {
+        findings.push({ matched: 'Zero-Width characters detected' });
+      }
+      return findings;
+    },
+  },
+
+  // P3: Base64ペイロード検出
+  base64Payload: {
+    id: 'IN-007',
+    name: 'Base64 Encoded Payload',
+    check: (text) => {
+      // 40文字以上のBase64文字列を抽出
+      const b64Matches = text.match(/[A-Za-z0-9+/]{40,}={0,2}/g) || [];
+      const findings = [];
+      for (const b64 of b64Matches.slice(0, 10)) {
+        let decoded;
+        try {
+          decoded = Buffer.from(b64, 'base64').toString('utf8');
+        } catch {
+          continue;
+        }
+        // デコード結果が有効なテキストでない場合スキップ
+        if (!/^[\x20-\x7E\s]{10,}$/.test(decoded)) continue;
+        // デコード結果をIN-001〜005のパターンで再チェック
+        for (const [, check] of Object.entries(CHECKS)) {
+          if (!check.patterns) continue;
+          for (const pattern of check.patterns) {
+            if (pattern.test(decoded)) {
+              findings.push({
+                matched: `Base64 decoded → [${check.id}] ${decoded.slice(0, 60)}`,
+              });
+              return findings; // 1件見つかれば十分
+            }
+          }
+        }
+      }
+      return findings;
+    },
   },
 };
 
 function runInboundChecks(text, enabledChecks) {
   const findings = [];
 
+  // P2: NFKC正規化（難読化回避対策）— パターンマッチ前に適用
+  const normalizedText = text.normalize('NFKC');
+
   for (const [checkName, check] of Object.entries(CHECKS)) {
     if (!enabledChecks[checkName]) continue;
 
-    for (const pattern of check.patterns) {
-      const match = text.match(pattern);
-      if (match) {
+    if (check.check) {
+      // カスタムチェック関数（IN-006 ASCII Smuggling, IN-007 Base64）
+      // ASCII Smugglingは正規化前のテキストでチェック（正規化で消える文字を検出するため）
+      const targetText = checkName === 'asciiSmuggling' ? text : normalizedText;
+      const results = check.check(targetText);
+      for (const result of results) {
         findings.push({
           id: check.id,
           name: check.name,
-          matched: match[0].slice(0, 80),
+          matched: result.matched || JSON.stringify(result),
         });
-        break; // 同一チェックで複数マッチは1件にまとめる
+      }
+    } else if (check.patterns) {
+      for (const pattern of check.patterns) {
+        const match = normalizedText.match(pattern);
+        if (match) {
+          findings.push({
+            id: check.id,
+            name: check.name,
+            matched: match[0].slice(0, 80),
+          });
+          break; // 同一チェックで複数マッチは1件にまとめる
+        }
       }
     }
   }

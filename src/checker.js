@@ -1,9 +1,13 @@
 // メインチェックロジック: stdin からhookデータを受け取り、判定結果を出力
 
+const crypto = require('crypto');
 const { loadConfig, getServerConfig, parseServerName, getAllowlistEntry } = require('./config');
 const { runOutboundChecks, CHECKS: OUTBOUND_CHECKS } = require('./checks/outbound');
 const { runInboundChecks, CHECKS: INBOUND_CHECKS } = require('./checks/inbound');
 const { log } = require('./logger');
+
+// P5: Rug Pull検出 — ツール定義ハッシュのインメモリストア
+const toolDefinitionHashes = new Map();
 
 // CHECK_ID_MAP を CHECKS 定義から自動構築（二重管理の排除）
 const CHECK_ID_MAP = {};
@@ -48,6 +52,35 @@ function flattenToString(obj) {
   }
 }
 
+// P5: Rug Pull検出 — ツール定義のSHA-256ハッシュを比較
+function checkRugPull(hookData) {
+  const toolName = hookData.tool_name || '';
+  const toolDef = hookData.tool_description || hookData.tool_input_schema;
+  if (!toolName || !toolDef) return null;
+
+  const defStr = typeof toolDef === 'string' ? toolDef : JSON.stringify(toolDef);
+  const hash = crypto.createHash('sha256').update(defStr).digest('hex');
+
+  if (!toolDefinitionHashes.has(toolName)) {
+    // 初回: ハッシュを記録
+    toolDefinitionHashes.set(toolName, hash);
+    return null;
+  }
+
+  const previousHash = toolDefinitionHashes.get(toolName);
+  if (hash !== previousHash) {
+    // ツール定義が変更された → Rug Pull疑い
+    toolDefinitionHashes.set(toolName, hash); // 新しいハッシュに更新
+    return {
+      id: 'RUG-001',
+      name: 'Tool Definition Changed (Rug Pull)',
+      matched: `${toolName}: hash changed ${previousHash.slice(0, 8)}→${hash.slice(0, 8)}`,
+    };
+  }
+
+  return null;
+}
+
 function checkOutbound(hookData, config) {
   const toolName = hookData.tool_name || '';
   const serverName = parseServerName(toolName);
@@ -65,6 +98,13 @@ function checkOutbound(hookData, config) {
 
   const text = flattenToString(hookData.tool_input);
   const findings = runOutboundChecks(text, serverConfig.checks.outbound);
+
+  // P5: Rug Pull検出（outbound時にツール定義をチェック）
+  const rugPullFinding = checkRugPull(hookData);
+  if (rugPullFinding) {
+    findings.push(rugPullFinding);
+  }
+
   const severity = determineSeverity(config, findings);
 
   return { severity, findings, server: serverName, direction: 'outbound' };
@@ -183,4 +223,4 @@ async function run(direction) {
   process.exit(output.exitCode);
 }
 
-module.exports = { run, checkOutbound, checkInbound, determineSeverity, flattenToString };
+module.exports = { run, checkOutbound, checkInbound, determineSeverity, flattenToString, checkRugPull, toolDefinitionHashes };

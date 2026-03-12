@@ -14,7 +14,9 @@
       "shellCommands": true,
       "suspiciousUrls": true,
       "scriptInjection": true,
-      "toolTampering": true
+      "toolTampering": true,
+      "asciiSmuggling": true,
+      "base64Payload": true
     }
   },
   "allowlist": [],
@@ -22,7 +24,7 @@
     "*": { "enabled": true }
   },
   "severity": {
-    "WARN": ["highEntropy", "pii", "suspiciousUrls"],
-    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands", "scriptInjection", "toolTampering", "envValues"]
+    "WARN": ["highEntropy", "pii", "suspiciousUrls", "base64Payload"],
+    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands", "scriptInjection", "toolTampering", "envValues", "asciiSmuggling"]
   }
 }
