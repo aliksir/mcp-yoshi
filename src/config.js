@@ -10,11 +10,9 @@ function loadConfig() {
   let userConfig = {};
 
   try {
-    userConfig = JSON.parse(fs.readFileSync(USER_CONFIG_PATH, 'utf8'));
+    userConfig = loadUserConfig();
   } catch (e) {
-    if (e.code !== 'ENOENT') {
-      process.stderr.write(`[mcp-yoshi] Warning: ${USER_CONFIG_PATH} の読み込みに失敗しました。デフォルト設定を使用します\n`);
-    }
+    process.stderr.write(`[mcp-yoshi] Warning: ${USER_CONFIG_PATH} の読み込みに失敗しました。デフォルト設定を使用します\n`);
   }
 
   return deepMerge(defaults, userConfig);
@@ -123,10 +121,7 @@ function loadUserConfig() {
 }
 
 function saveUserConfig(userConfig) {
-  const dir = path.dirname(USER_CONFIG_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  fs.mkdirSync(path.dirname(USER_CONFIG_PATH), { recursive: true });
   fs.writeFileSync(USER_CONFIG_PATH, JSON.stringify(userConfig, null, 2), 'utf8');
 }
 

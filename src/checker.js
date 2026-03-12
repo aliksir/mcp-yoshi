@@ -1,6 +1,6 @@
 // メインチェックロジック: stdin からhookデータを受け取り、判定結果を出力
 
-const { loadConfig, getServerConfig, parseServerName, isAllowlisted, getAllowlistEntry } = require('./config');
+const { loadConfig, getServerConfig, parseServerName, getAllowlistEntry } = require('./config');
 const { runOutboundChecks, CHECKS: OUTBOUND_CHECKS } = require('./checks/outbound');
 const { runInboundChecks, CHECKS: INBOUND_CHECKS } = require('./checks/inbound');
 const { log } = require('./logger');
@@ -55,9 +55,9 @@ function checkOutbound(hookData, config) {
   if (!serverName) return { severity: 'PASS', findings: [] };
 
   // allowlistチェック: チェックをスキップするがログは記録する
-  if (isAllowlisted(config, serverName)) {
-    const entry = getAllowlistEntry(config, serverName);
-    return { severity: 'SKIPPED', findings: [], skipped: true, server: serverName, reason: entry.reason };
+  const allowEntry = getAllowlistEntry(config, serverName);
+  if (allowEntry) {
+    return { severity: 'SKIPPED', findings: [], skipped: true, server: serverName, reason: allowEntry.reason };
   }
 
   const serverConfig = getServerConfig(config, serverName);
@@ -77,9 +77,9 @@ function checkInbound(hookData, config) {
   if (!serverName) return { severity: 'PASS', findings: [] };
 
   // allowlistチェック: チェックをスキップするがログは記録する
-  if (isAllowlisted(config, serverName)) {
-    const entry = getAllowlistEntry(config, serverName);
-    return { severity: 'SKIPPED', findings: [], skipped: true, server: serverName, reason: entry.reason };
+  const allowEntry = getAllowlistEntry(config, serverName);
+  if (allowEntry) {
+    return { severity: 'SKIPPED', findings: [], skipped: true, server: serverName, reason: allowEntry.reason };
   }
 
   const serverConfig = getServerConfig(config, serverName);
