@@ -2,7 +2,7 @@
 
 const { run } = require('../src/checker');
 const { init, uninstall } = require('../src/setup');
-const { loadConfig } = require('../src/config');
+const { loadConfig, addToAllowlist, removeFromAllowlist, listAllowlist } = require('../src/config');
 const { readLogs } = require('../src/logger');
 
 const args = process.argv.slice(2);
@@ -27,6 +27,9 @@ Usage:
   mcp-yoshi uninstall [--global|--project]           hook設定を削除
   mcp-yoshi config                                   現在の設定を表示
   mcp-yoshi logs [--tail N] [--level warn|block]     ログを表示
+  mcp-yoshi allow <server> --reason "理由"          allowlistにサーバーを追加
+  mcp-yoshi allow --list                            allowlist一覧を表示
+  mcp-yoshi allow --remove <server>                 allowlistからサーバーを削除
   mcp-yoshi --version                                バージョン表示
   mcp-yoshi --help                                   このヘルプ
 `);
@@ -82,6 +85,41 @@ switch (command) {
   case 'uninstall': {
     const scope = hasFlag('--project') ? 'project' : 'global';
     uninstall(scope);
+    break;
+  }
+  case 'allow': {
+    if (hasFlag('--list')) {
+      const config = loadConfig();
+      const list = listAllowlist(config);
+      if (list.length === 0) {
+        console.log('allowlistは空です');
+      } else {
+        for (const entry of list) {
+          console.log(`  ${entry.server} — ${entry.reason || '(理由なし)'} (${entry.addedAt || ''})`);
+        }
+      }
+    } else if (hasFlag('--remove')) {
+      const server = parseFlag('--remove');
+      if (!server) {
+        console.error('Error: --remove <server> を指定してください');
+        process.exit(1);
+      }
+      const removed = removeFromAllowlist(server);
+      if (removed) {
+        console.log(`${server} をallowlistから削除しました`);
+      } else {
+        console.log(`${server} はallowlistに存在しません`);
+      }
+    } else {
+      const server = args[1];
+      if (!server) {
+        console.error('Error: mcp-yoshi allow <server> --reason "理由" を指定してください');
+        process.exit(1);
+      }
+      const reason = parseFlag('--reason') || '';
+      const entry = addToAllowlist(server, reason);
+      console.log(`${server} をallowlistに追加しました（理由: ${entry.reason || 'なし'}）`);
+    }
     break;
   }
   case 'config':

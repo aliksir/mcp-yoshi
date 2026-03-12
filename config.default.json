@@ -17,6 +17,7 @@
       "toolTampering": true
     }
   },
+  "allowlist": [],
   "servers": {
     "*": { "enabled": true }
   },
