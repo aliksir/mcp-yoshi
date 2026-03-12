@@ -42,6 +42,7 @@ const CHECKS = {
       const matches = text.match(/[A-Za-z0-9+/=_-]{32,}/g) || [];
       const findings = [];
       for (const m of matches.slice(0, 50)) {
+        if (isKnownHarmlessPattern(m)) continue;
         const entropy = calcEntropy(m);
         if (entropy > 4.5 && m.length >= 32) {
           findings.push({ matched: mask(m), entropy: entropy.toFixed(2) });
@@ -71,11 +72,27 @@ const CHECKS = {
       /0[0-9]{1,4}-?[0-9]{1,4}-?[0-9]{4}/,
       // クレジットカード（16桁）
       /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\b/,
-      // マイナンバー（12桁数字）
-      /\b[0-9]{4}\s?[0-9]{4}\s?[0-9]{4}\b/,
+      // マイナンバー（12桁数字）— コンテキスト必須 or 区切りなしの連続12桁のみ
+      // ハイフン・ドット区切り（日付・バージョン番号）は除外
+      /(?:マイナンバー|個人番号|my\s*number)\s*[:：]?\s*[0-9]{4}\s?[0-9]{4}\s?[0-9]{4}/i,
     ],
   },
 };
+
+// OUT-003: 既知の無害パターンを除外（calcEntropy前にスキップ）
+function isKnownHarmlessPattern(str) {
+  // SHA-256ハッシュ（64文字hex）
+  if (/^[0-9a-f]{64}$/i.test(str)) return true;
+  // SHA-512ハッシュ（128文字hex）
+  if (/^[0-9a-f]{128}$/i.test(str)) return true;
+  // UUID
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)) return true;
+  // 短いBase64（32文字ちょうど、末尾==パディング）
+  if (str.length === 32 && /==$/i.test(str)) return true;
+  // ファイルパスっぽい（/ or \ を3つ以上含む）
+  if ((str.match(/[/\\]/g) || []).length >= 3) return true;
+  return false;
+}
 
 function calcEntropy(str) {
   const freq = {};

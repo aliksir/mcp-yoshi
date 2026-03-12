@@ -14,7 +14,8 @@ const CHECKS = {
       /\bforget\s+(all|everything)\s+(about|you)/i,
       /\boverride\s+(all\s+)?(safety|security|restrictions?)/i,
       /\bact\s+as\s+(if\s+)?(you\s+are|a|an)\b/i,
-      /\brole\s*:\s*(system|assistant|user)\b/i,
+      // role: system — 攻撃的文脈がある場合のみ検出（YAML/JSON設定は除外）
+      /\b(?:ignore|override|new|inject|fake)\b[^.]{0,40}\brole\s*:\s*(system|assistant|user)\b/i,
       /<\/?system>/i,
     ],
   },
@@ -24,13 +25,15 @@ const CHECKS = {
     name: 'Shell Command Embedding',
     patterns: [
       /\$\([^)]{2,}\)/,                          // $(command)
-      /`[^`]{2,}`/,                               // `command` (backtick)
+      // バックティック — 中身に危険コマンドがある場合のみ検出（Markdownコードスパン除外）
+      /`[^`]*\b(?:rm|curl|wget|sudo|chmod|dd|mkfs|kill)\b[^`]*`/,
       /;\s*(rm|curl|wget|chmod|chown|sudo|kill|dd|mkfs)\s/i,
       /\|\s*(bash|sh|zsh|cmd|powershell)\b/i,     // | bash
       /&&\s*(rm|curl|wget|sudo)\s/i,
       />\s*\/etc\//,                              // > /etc/...
-      /\beval\s*\(/,
-      /\bexec\s*\(/,
+      // eval/exec — 攻撃的コンテキストがある場合のみ（コード例は除外）
+      /;\s*eval\s*\(/,
+      /\bchild_process\b[^;]*\bexec\s*\(/,
     ],
   },
 

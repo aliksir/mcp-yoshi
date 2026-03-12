@@ -87,6 +87,32 @@ mcp-yoshi logs --level block
 mcp-yoshi config
 ```
 
+## Allowlist（信頼済みサーバー）
+
+特定のMCPサーバーを信頼済みとして登録し、チェックをスキップできます。
+**ユーザー責任**での運用となりますが、ログ記録は継続されます（severity: SKIPPED）。
+
+```bash
+# サーバーを allowlist に追加（理由必須推奨）
+mcp-yoshi allow memory --reason "社内ナレッジグラフ、信頼済み"
+
+# allowlist 一覧
+mcp-yoshi allow --list
+
+# allowlist から削除
+mcp-yoshi allow --remove memory
+```
+
+`~/.mcp-yoshi/config.json` で直接設定することもできます：
+
+```json
+{
+  "allowlist": [
+    { "server": "memory", "reason": "社内ナレッジグラフ", "addedAt": "2026-03-12T00:00:00.000Z" }
+  ]
+}
+```
+
 ## 設定カスタマイズ
 
 `~/.mcp-yoshi/config.json` を作成して設定を上書きできます。

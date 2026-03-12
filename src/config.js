@@ -10,11 +10,9 @@ function loadConfig() {
   let userConfig = {};
 
   try {
-    userConfig = JSON.parse(fs.readFileSync(USER_CONFIG_PATH, 'utf8'));
+    userConfig = loadUserConfig();
   } catch (e) {
-    if (e.code !== 'ENOENT') {
-      process.stderr.write(`[mcp-yoshi] Warning: ${USER_CONFIG_PATH} の読み込みに失敗しました。デフォルト設定を使用します\n`);
-    }
+    process.stderr.write(`[mcp-yoshi] Warning: ${USER_CONFIG_PATH} の読み込みに失敗しました。デフォルト設定を使用します\n`);
   }
 
   return deepMerge(defaults, userConfig);
@@ -70,4 +68,65 @@ function resolveLogDir(config) {
   return logDir;
 }
 
-module.exports = { loadConfig, getServerConfig, parseServerName, resolveLogDir, deepMerge };
+function isAllowlisted(config, serverName) {
+  const list = config.allowlist || [];
+  return list.some((entry) => entry.server === serverName);
+}
+
+function getAllowlistEntry(config, serverName) {
+  const list = config.allowlist || [];
+  return list.find((entry) => entry.server === serverName) || null;
+}
+
+function listAllowlist(config) {
+  return config.allowlist || [];
+}
+
+function addToAllowlist(serverName, reason) {
+  const userConfig = loadUserConfig();
+  if (!userConfig.allowlist) userConfig.allowlist = [];
+
+  // 既存エントリがあれば更新
+  const idx = userConfig.allowlist.findIndex((e) => e.server === serverName);
+  const entry = { server: serverName, reason: reason || '', addedAt: new Date().toISOString() };
+  if (idx >= 0) {
+    userConfig.allowlist[idx] = entry;
+  } else {
+    userConfig.allowlist.push(entry);
+  }
+
+  saveUserConfig(userConfig);
+  return entry;
+}
+
+function removeFromAllowlist(serverName) {
+  const userConfig = loadUserConfig();
+  if (!userConfig.allowlist) return false;
+
+  const before = userConfig.allowlist.length;
+  userConfig.allowlist = userConfig.allowlist.filter((e) => e.server !== serverName);
+  if (userConfig.allowlist.length === before) return false;
+
+  saveUserConfig(userConfig);
+  return true;
+}
+
+function loadUserConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(USER_CONFIG_PATH, 'utf8'));
+  } catch (e) {
+    if (e.code === 'ENOENT') return {};
+    throw e;
+  }
+}
+
+function saveUserConfig(userConfig) {
+  fs.mkdirSync(path.dirname(USER_CONFIG_PATH), { recursive: true });
+  fs.writeFileSync(USER_CONFIG_PATH, JSON.stringify(userConfig, null, 2), 'utf8');
+}
+
+module.exports = {
+  loadConfig, getServerConfig, parseServerName, resolveLogDir, deepMerge,
+  isAllowlisted, getAllowlistEntry, listAllowlist, addToAllowlist, removeFromAllowlist,
+  USER_CONFIG_PATH,
+};
