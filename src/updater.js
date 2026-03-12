@@ -9,9 +9,11 @@ function fetchLatestVersion() {
     const url = `https://registry.npmjs.org/${pkg.name}/latest`;
     https.get(url, { headers: { 'Accept': 'application/json' } }, (res) => {
       if (res.statusCode === 404) {
+        res.resume(); // ソケット解放のためボディをドレイン
         return resolve(null); // npmに未公開
       }
       if (res.statusCode !== 200) {
+        res.resume();
         return reject(new Error(`npm registry responded with ${res.statusCode}`));
       }
 
