@@ -445,10 +445,11 @@ console.log('\n=== P4: Tool Poisoning Additional Patterns (IN-005) ===');
 // === P5: Rug Pull Detection ===
 console.log('\n=== P5: Rug Pull Detection ===');
 {
-  const { checkRugPull, toolDefinitionHashes } = require('../src/checker');
+  const { checkRugPull, toolDefinitionHashes, resetHashState, HASH_FILE_PATH } = require('../src/checker');
 
-  // Clear state
-  toolDefinitionHashes.clear();
+  // Clear state (including hashesLoaded flag) and remove persisted file
+  resetHashState();
+  try { fs.unlinkSync(HASH_FILE_PATH); } catch {};
 
   // First call: should return null (no previous hash)
   const r1 = checkRugPull({ tool_name: 'mcp__test__tool', tool_description: 'A helpful tool' });
@@ -466,7 +467,7 @@ console.log('\n=== P5: Rug Pull Detection ===');
   const r4 = checkRugPull({ tool_name: 'mcp__test__nodesc' });
   assert(r4 === null, 'RUG-001: No description returns null');
 
-  toolDefinitionHashes.clear();
+  resetHashState();
 }
 
 // === P6: SSRF Expansion (IN-003) ===
@@ -595,6 +596,96 @@ console.log('\n=== Updater ===');
   assert(compareVersions('2.0.0', '1.9.9') === -1, 'compareVersions: current is newer returns -1');
   assert(compareVersions('1.0.0', '1.0.1') === 1, 'compareVersions: patch version diff');
   assert(compareVersions('v1.0.0', '1.0.0') === 0, 'compareVersions: handles v prefix');
+}
+
+// === Hash Persistence ===
+console.log('\n=== Hash Persistence ===');
+{
+  const { loadHashes, saveHashes, toolDefinitionHashes, resetHashState, HASH_FILE_PATH, checkRugPull } = require('../src/checker');
+
+  // テスト用にハッシュ状態をリセット（hashesLoadedフラグ含む）+ ディスクファイル削除
+  resetHashState();
+  try { fs.unlinkSync(HASH_FILE_PATH); } catch {};
+
+  // saveHashes / loadHashes 基本動作（実際のパスに書き込む代わりに手動テスト）
+  // checkRugPullの永続化動作を間接テスト
+  const hookData1 = { tool_name: 'mcp__test__tool', tool_description: 'description v1' };
+  const hookData2 = { tool_name: 'mcp__test__tool', tool_description: 'description v2' };
+
+  // 初回: ハッシュ記録、null返却
+  const result1 = checkRugPull(hookData1);
+  assert(result1 === null, 'hash persistence: first call returns null');
+  assert(toolDefinitionHashes.has('mcp__test__tool'), 'hash persistence: hash stored in Map');
+
+  // 同じ定義: null返却
+  const result2 = checkRugPull(hookData1);
+  assert(result2 === null, 'hash persistence: same definition returns null');
+
+  // 変更: RUG-001返却
+  const result3 = checkRugPull(hookData2);
+  assert(result3 !== null && result3.id === 'RUG-001', 'hash persistence: changed definition returns RUG-001');
+
+  // クリーンアップ: Map + hashesLoadedフラグ + ディスクファイルを全て消す
+  resetHashState();
+  try { fs.unlinkSync(HASH_FILE_PATH); } catch {};
+}
+
+// === Stats ===
+console.log('\n=== Stats ===');
+{
+  const { collectStats, formatStats } = require('../src/stats');
+
+  // ログなし: null返却
+  const emptyStats = collectStats({ logDir: '/nonexistent/path' }, { days: 7 });
+  assert(emptyStats === null, 'stats: no log dir returns null');
+
+  // formatStats null: メッセージ返却
+  const emptyFormat = formatStats(null);
+  assert(emptyFormat.includes('ログデータがありません'), 'stats: null stats shows message');
+
+  // 模擬ログで統計テスト
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yoshi-stats-'));
+  const today = new Date().toISOString().slice(0, 10);
+  const logFile = path.join(tmpDir, `mcp-yoshi-${today}.log`);
+
+  const entries = [
+    { timestamp: new Date().toISOString(), direction: 'outbound', tool: 'mcp__srv1__read', server: 'srv1', severity: 'PASS', skipped: false, findings: [] },
+    { timestamp: new Date().toISOString(), direction: 'outbound', tool: 'mcp__srv1__write', server: 'srv1', severity: 'BLOCK', skipped: false, findings: [{ id: 'OUT-001', name: 'API Key Pattern', matched: 'sk-***' }] },
+    { timestamp: new Date().toISOString(), direction: 'inbound', tool: 'mcp__srv2__query', server: 'srv2', severity: 'WARN', skipped: false, findings: [{ id: 'IN-003', name: 'Suspicious URL', matched: 'javascript:alert()' }] },
+    { timestamp: new Date().toISOString(), direction: 'outbound', tool: 'mcp__srv1__read', server: 'srv1', severity: 'SKIPPED', skipped: true, findings: [] },
+  ];
+  fs.writeFileSync(logFile, entries.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+
+  const stats = collectStats({ logDir: tmpDir }, { days: 7 });
+  assert(stats !== null, 'stats: returns non-null for log data');
+  assert(stats.total === 4, 'stats: total count correct');
+  assert(stats.bySeverity.PASS === 1, 'stats: PASS count');
+  assert(stats.bySeverity.BLOCK === 1, 'stats: BLOCK count');
+  assert(stats.bySeverity.WARN === 1, 'stats: WARN count');
+  assert(stats.bySeverity.SKIPPED === 1, 'stats: SKIPPED count');
+  assert(stats.byServer.srv1.total === 3, 'stats: server srv1 count');
+  assert(stats.byServer.srv2.total === 1, 'stats: server srv2 count');
+  assert(stats.byCheck['OUT-001'].count === 1, 'stats: check OUT-001 count');
+  assert(stats.byCheck['IN-003'].count === 1, 'stats: check IN-003 count');
+  assert(stats.byDirection.outbound === 3, 'stats: outbound direction count');
+  assert(stats.byDirection.inbound === 1, 'stats: inbound direction count');
+
+  // formatStats テスト
+  const formatted = formatStats(stats);
+  assert(formatted.includes('統計レポート'), 'stats: format includes title');
+  assert(formatted.includes('ブロック率'), 'stats: format includes block rate');
+  assert(formatted.includes('srv1'), 'stats: format includes server name');
+
+  // 期間外のログは除外される
+  const oldDate = '2020-01-01';
+  const oldLogFile = path.join(tmpDir, `mcp-yoshi-${oldDate}.log`);
+  fs.writeFileSync(oldLogFile, JSON.stringify({ timestamp: '2020-01-01T00:00:00Z', direction: 'outbound', tool: 'old', server: 'old', severity: 'BLOCK', findings: [] }) + '\n', 'utf8');
+
+  const recentStats = collectStats({ logDir: tmpDir }, { days: 7 });
+  assert(recentStats.total === 4, 'stats: old logs excluded by period filter');
+
+  // クリーンアップ
+  fs.rmSync(tmpDir, { recursive: true });
 }
 
 // === Summary ===
