@@ -38,6 +38,18 @@ const CHECKS = {
       // eval/exec — 攻撃的コンテキストがある場合のみ（コード例は除外）
       /;\s*eval\s*\(/,
       /\bchild_process\b[^;]*\bexec\s*\(/,
+      // PowerShell固有構文
+      /\b(?:Invoke-Expression|IEX)\s*[\s(]/i,
+      /\bStart-Process\b/i,
+      /\b(?:Invoke-WebRequest|iwr|Invoke-RestMethod|irm)\s/i,
+      // スクリプト言語の直接実行
+      /\b(?:python3?|node|ruby|perl)\s+-[ec]\s/i,
+      // 環境変数展開攻撃（シェル変数の悪用）
+      /\$\{IFS\}/,
+      /\$\{(?:PATH|HOME|USER)\}[^a-zA-Z]*(?:rm|curl|wget|sudo|chmod)\b/i,
+      // Windows固有の危険コマンド
+      /\bcmd\s*\/[ck]\s/i,
+      /\b(?:certutil|bitsadmin|mshta|regsvr32|rundll32|msiexec)\b[^.]/i,
     ],
   },
 
