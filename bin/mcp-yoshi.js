@@ -5,6 +5,7 @@ const { init, uninstall } = require('../src/setup');
 const { loadConfig, addToAllowlist, removeFromAllowlist, listAllowlist } = require('../src/config');
 const { readLogs } = require('../src/logger');
 const { checkUpdate, runUpdate } = require('../src/updater');
+const { collectStats, formatStats } = require('../src/stats');
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -28,6 +29,7 @@ Usage:
   mcp-yoshi uninstall [--global|--project]           hook設定を削除
   mcp-yoshi config                                   現在の設定を表示
   mcp-yoshi logs [--tail N] [--level warn|block]     ログを表示
+  mcp-yoshi stats [--days N]                         検出統計を表示（デフォルト7日）
   mcp-yoshi allow <server> --reason "理由"          allowlistにサーバーを追加
   mcp-yoshi allow --list                            allowlist一覧を表示
   mcp-yoshi allow --remove <server>                 allowlistからサーバーを削除
@@ -49,7 +51,7 @@ function showConfig() {
 
 function showLogs() {
   const config = loadConfig();
-  const tail = parseInt(parseFlag('--tail') || '20', 10);
+  const tail = parseInt(parseFlag('--tail') || '20', 10) || 20;
   const level = parseFlag('--level');
   const entries = readLogs(config, { tail, level });
 
@@ -155,6 +157,13 @@ switch (command) {
       console.error(`アップデート確認に失敗しました: ${err.message}`);
       process.exit(1);
     });
+    break;
+  }
+  case 'stats': {
+    const config = loadConfig();
+    const days = parseInt(parseFlag('--days') || '7', 10) || 7;
+    const stats = collectStats(config, { days });
+    console.log(formatStats(stats));
     break;
   }
   case 'config':

@@ -1,13 +1,47 @@
 // メインチェックロジック: stdin からhookデータを受け取り、判定結果を出力
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const { loadConfig, getServerConfig, parseServerName, getAllowlistEntry } = require('./config');
 const { runOutboundChecks, CHECKS: OUTBOUND_CHECKS } = require('./checks/outbound');
 const { runInboundChecks, CHECKS: INBOUND_CHECKS } = require('./checks/inbound');
 const { log } = require('./logger');
 
-// P5: Rug Pull検出 — ツール定義ハッシュのインメモリストア
+// P5: Rug Pull検出 — ツール定義ハッシュ（ディスク永続化対応）
+const HASH_FILE_PATH = path.join(os.homedir(), '.mcp-yoshi', 'tool-hashes.json');
 const toolDefinitionHashes = new Map();
+let hashesLoaded = false;
+
+function loadHashes() {
+  if (hashesLoaded) return;
+  hashesLoaded = true;
+  try {
+    const data = JSON.parse(fs.readFileSync(HASH_FILE_PATH, 'utf8'));
+    for (const [key, value] of Object.entries(data)) {
+      toolDefinitionHashes.set(key, value);
+    }
+  } catch {
+    // ファイルなし or 破損 → 空Mapで開始（フェイルセーフ）
+  }
+}
+
+function saveHashes() {
+  try {
+    const dir = path.dirname(HASH_FILE_PATH);
+    fs.mkdirSync(dir, { recursive: true });
+    const obj = Object.fromEntries(toolDefinitionHashes);
+    fs.writeFileSync(HASH_FILE_PATH, JSON.stringify(obj, null, 2), 'utf8');
+  } catch {
+    // 書き込み失敗は無視（フィルター動作を止めない）
+  }
+}
+
+function resetHashState() {
+  toolDefinitionHashes.clear();
+  hashesLoaded = false;
+}
 
 // CHECK_ID_MAP を CHECKS 定義から自動構築（二重管理の排除）
 const CHECK_ID_MAP = {};
@@ -52,18 +86,21 @@ function flattenToString(obj) {
   }
 }
 
-// P5: Rug Pull検出 — ツール定義のSHA-256ハッシュを比較
+// P5: Rug Pull検出 — ツール定義のSHA-256ハッシュを比較（ディスク永続化）
 function checkRugPull(hookData) {
   const toolName = hookData.tool_name || '';
   const toolDef = hookData.tool_description || hookData.tool_input_schema;
   if (!toolName || !toolDef) return null;
 
+  loadHashes(); // 初回のみディスクからロード
+
   const defStr = typeof toolDef === 'string' ? toolDef : JSON.stringify(toolDef);
   const hash = crypto.createHash('sha256').update(defStr).digest('hex');
 
   if (!toolDefinitionHashes.has(toolName)) {
-    // 初回: ハッシュを記録
+    // 初回: ハッシュを記録して永続化
     toolDefinitionHashes.set(toolName, hash);
+    saveHashes();
     return null;
   }
 
@@ -71,6 +108,7 @@ function checkRugPull(hookData) {
   if (hash !== previousHash) {
     // ツール定義が変更された → Rug Pull疑い
     toolDefinitionHashes.set(toolName, hash); // 新しいハッシュに更新
+    saveHashes();
     return {
       id: 'RUG-001',
       name: 'Tool Definition Changed (Rug Pull)',
@@ -223,4 +261,4 @@ async function run(direction) {
   process.exit(output.exitCode);
 }
 
-module.exports = { run, checkOutbound, checkInbound, determineSeverity, flattenToString, checkRugPull, toolDefinitionHashes };
+module.exports = { run, checkOutbound, checkInbound, determineSeverity, flattenToString, checkRugPull, toolDefinitionHashes, loadHashes, saveHashes, resetHashState, HASH_FILE_PATH };
