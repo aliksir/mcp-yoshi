@@ -9,6 +9,42 @@ const { runOutboundChecks, CHECKS: OUTBOUND_CHECKS } = require('./checks/outboun
 const { runInboundChecks, CHECKS: INBOUND_CHECKS } = require('./checks/inbound');
 const { log } = require('./logger');
 
+// RATE-001: Rapid Fire Detection — ツール名ごとの呼び出し履歴（セッション内）
+const RATE_WINDOW_MS = 60000;
+const RATE_LIMIT = 10;
+const CALL_HISTORY_MAX_ENTRIES = 1000;
+const callHistory = new Map();
+
+function checkRateLimit(toolName) {
+  if (!toolName) return null;
+
+  const now = Date.now();
+  const cutoff = now - RATE_WINDOW_MS;
+
+  // 古いタイムスタンプを除去しつつ、現在のツールのタイムスタンプ一覧を取得
+  let timestamps = (callHistory.get(toolName) || []).filter((ts) => ts >= cutoff);
+  timestamps.push(now);
+  callHistory.set(toolName, timestamps);
+
+  // Map全体の肥大化防止: エントリ数が上限を超えたら最古エントリを削除
+  if (callHistory.size > CALL_HISTORY_MAX_ENTRIES) {
+    const oldestKey = callHistory.keys().next().value;
+    callHistory.delete(oldestKey);
+  }
+
+  const count = timestamps.length;
+  if (count >= RATE_LIMIT) {
+    return {
+      id: 'RATE-001',
+      name: 'Rapid Fire Detection',
+      severity: 'WARN',
+      message: `Tool '${toolName}' called ${count} times in ${RATE_WINDOW_MS / 1000}s (limit: ${RATE_LIMIT})`,
+    };
+  }
+
+  return null;
+}
+
 // P5: Rug Pull検出 — ツール定義ハッシュ（ディスク永続化対応）
 const HASH_FILE_PATH = path.join(os.homedir(), '.mcp-yoshi', 'tool-hashes.json');
 const toolDefinitionHashes = new Map();
@@ -228,10 +264,23 @@ async function run(direction) {
     process.exit(1);
   }
 
+  // RATE-001: レートチェック（outbound/inbound チェックより先に実行）
+  const rateFinding = checkRateLimit(hookData.tool_name);
+
   const result =
     direction === 'outbound'
       ? checkOutbound(hookData, config)
       : checkInbound(hookData, config);
+
+  // レート超過 finding を結果に追加（WARN のみなので severity は上書きしない）
+  if (rateFinding) {
+    result.findings = result.findings || [];
+    result.findings.push(rateFinding);
+    // findings が追加されたので severity を再評価（PASS → WARN へ昇格し得る）
+    if (result.severity === 'PASS') {
+      result.severity = 'WARN';
+    }
+  }
 
   // ログ記録
   log(config, {
@@ -261,4 +310,4 @@ async function run(direction) {
   process.exit(output.exitCode);
 }
 
-module.exports = { run, checkOutbound, checkInbound, determineSeverity, flattenToString, checkRugPull, toolDefinitionHashes, loadHashes, saveHashes, resetHashState, HASH_FILE_PATH };
+module.exports = { run, checkOutbound, checkInbound, determineSeverity, flattenToString, checkRugPull, toolDefinitionHashes, loadHashes, saveHashes, resetHashState, HASH_FILE_PATH, checkRateLimit, callHistory, RATE_WINDOW_MS, RATE_LIMIT };
