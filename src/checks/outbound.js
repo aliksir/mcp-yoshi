@@ -1,5 +1,7 @@
 // アウトバウンドチェック: 送信データから機密情報漏洩を検出
 
+const MAX_PAYLOAD_BYTES = 50000;
+
 const CHECKS = {
   apiKeys: {
     id: 'OUT-001',
@@ -77,7 +79,68 @@ const CHECKS = {
       /(?:マイナンバー|個人番号|my\s*number)\s*[:：]?\s*[0-9]{4}\s?[0-9]{4}\s?[0-9]{4}/i,
     ],
   },
+
+  largePayload: {
+    id: 'OUT-006',
+    name: 'Large Payload',
+    severity: 'WARN',
+    check: (_text, toolInput) => {
+      const size = Buffer.byteLength(JSON.stringify(toolInput ?? {}), 'utf8');
+      const limit = MAX_PAYLOAD_BYTES;
+      if (size > limit) {
+        return [{ size, limit }];
+      }
+      return [];
+    },
+  },
+
+  pathTraversal: {
+    id: 'OUT-007',
+    name: 'Path Traversal',
+    severity: 'BLOCK',
+    patterns: [
+      /\/etc\/passwd/,
+      /\/etc\/shadow/,
+      /\/etc\/hosts/,
+      /~\/\.ssh\//,
+      /~\/\.aws\//,
+      /~\/\.gnupg\//,
+      /\/proc\//,
+      /\/sys\//,
+      /C:\x5CWindows\x5CSystem32/i,
+      /(?:\.\.[\\/]){3,}/,
+    ],
+    check: (_text, toolInput) => {
+      const findings = [];
+      scanValues(toolInput, (val) => {
+        for (const pattern of CHECKS.pathTraversal.patterns) {
+          const match = val.match(pattern);
+          if (match) {
+            findings.push({ matched_path: match[0] });
+            return; // この値で1件見つかれば次の値へ
+          }
+        }
+      });
+      return findings;
+    },
+  },
 };
+
+// OUT-007: tool_input内の全文字列値を再帰的にスキャンしてコールバックを呼ぶ
+function scanValues(obj, callback) {
+  if (obj === null || obj === undefined) return;
+  if (typeof obj === 'string') {
+    callback(obj);
+  } else if (Array.isArray(obj)) {
+    for (const item of obj) {
+      scanValues(item, callback);
+    }
+  } else if (typeof obj === 'object') {
+    for (const val of Object.values(obj)) {
+      scanValues(val, callback);
+    }
+  }
+}
 
 // OUT-003: 既知の無害パターンを除外（calcEntropy前にスキップ）
 function isKnownHarmlessPattern(str) {
@@ -113,7 +176,7 @@ function mask(str) {
   return str.slice(0, 4) + '****' + str.slice(-4);
 }
 
-function runOutboundChecks(text, enabledChecks) {
+function runOutboundChecks(text, enabledChecks, toolInput) {
   const findings = [];
 
   // P2: NFKC正規化（難読化回避対策）
@@ -123,14 +186,24 @@ function runOutboundChecks(text, enabledChecks) {
     if (!enabledChecks[checkName]) continue;
 
     if (check.check) {
-      // カスタムチェック関数
-      const results = check.check(normalizedText);
+      // カスタムチェック関数（text と toolInput の両方を渡す）
+      const results = check.check(normalizedText, toolInput);
       for (const result of results) {
-        findings.push({
+        const finding = {
           id: check.id,
           name: check.name,
           detail: result,
-        });
+        };
+        if (check.severity) finding.severity = check.severity;
+        // OUT-006: メッセージ整形
+        if (check.id === 'OUT-006') {
+          finding.message = `Payload size ${result.size}B exceeds limit ${result.limit}B — potential bulk data exfiltration`;
+        }
+        // OUT-007: メッセージ整形
+        if (check.id === 'OUT-007') {
+          finding.message = `Sensitive path detected: ${result.matched_path} — potential path traversal`;
+        }
+        findings.push(finding);
       }
     } else if (check.patterns) {
       // パターンマッチ

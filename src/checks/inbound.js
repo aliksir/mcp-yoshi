@@ -4,6 +4,9 @@
 const ASCII_SMUGGLING_PATTERN = /[\u{E0000}-\u{E007F}]/u;
 const ZERO_WIDTH_PATTERN = /[\u200B\u200C\u200D\uFEFF\u2060]/;
 
+// IN-008: Response Size Limit
+const MAX_RESPONSE_BYTES = 200000;
+
 const CHECKS = {
   promptInjection: {
     id: 'IN-001',
@@ -153,6 +156,90 @@ const CHECKS = {
           }
         }
       }
+      return findings;
+    },
+  },
+
+  // IN-008: Response Size Limit — コンテキストウィンドウポイズニング対策
+  responseSizeLimit: {
+    id: 'IN-008',
+    name: 'Response Size Limit',
+    severity: 'WARN',
+    check: (text) => {
+      const size = Buffer.byteLength(text, 'utf8');
+      const limit = MAX_RESPONSE_BYTES;
+      if (size > limit) {
+        return [{ matched: `Response size ${size}B exceeds limit ${limit}B — potential context window poisoning` }];
+      }
+      return [];
+    },
+  },
+
+  // IN-009: Hidden Fields — MCPレスポンス内の未申告内部フィールド検出
+  hiddenFields: {
+    id: 'IN-009',
+    name: 'Hidden Fields',
+    severity: 'WARN',
+    check: (text) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        return [];
+      }
+      // 除外リスト: 一般的なフレームワークで使われる標準フィールド
+      const ALLOWED_HIDDEN = new Set(['_type', '_id']);
+      const findings = [];
+
+      function scanObject(obj) {
+        if (!obj || typeof obj !== 'object') return;
+        if (Array.isArray(obj)) {
+          for (const item of obj) scanObject(item);
+          return;
+        }
+        for (const key of Object.keys(obj)) {
+          if ((key.startsWith('_') || key.startsWith('$')) && !ALLOWED_HIDDEN.has(key)) {
+            findings.push({ matched: `Hidden field detected: '${key}' — undeclared internal field in MCP response` });
+          }
+          scanObject(obj[key]);
+        }
+      }
+
+      scanObject(parsed);
+      return findings;
+    },
+  },
+
+  // IN-010: Elicitation Abuse — Elicitation経由の攻撃パターン検出
+  elicitationAbuse: {
+    id: 'IN-010',
+    name: 'Elicitation Abuse',
+    severity: 'BLOCK',
+    check: (text) => {
+      const findings = [];
+
+      // パターン1: 認証情報要求（認証情報ワードと入力要求ワードの共存）
+      if (/password|api.?key|secret|token|credential/i.test(text) &&
+          /enter|input|provide|type|submit/i.test(text)) {
+        const snippet = text.slice(0, 80).replace(/\n/g, ' ');
+        findings.push({ matched: `Elicitation abuse detected: credential_request — ${snippet}` });
+      }
+
+      // パターン2: コマンド実行誘導（承認ワードとコマンド実行ワードの共存）
+      if (/confirm|approve|authorize/i.test(text) &&
+          /exec|bash|eval|system|spawn|child_process/i.test(text)) {
+        const snippet = text.slice(0, 80).replace(/\n/g, ' ');
+        findings.push({ matched: `Elicitation abuse detected: command_execution — ${snippet}` });
+      }
+
+      // パターン3: 隠しコマンド（シェル構文がUIテキストに埋め込まれている）
+      const hiddenCmdPattern = /\$\(|`[^`]+`|\bsh\s+-c\b|\bbash\s+-c\b/;
+      const hiddenMatch = text.match(hiddenCmdPattern);
+      if (hiddenMatch) {
+        const snippet = hiddenMatch[0].slice(0, 80);
+        findings.push({ matched: `Elicitation abuse detected: hidden_command — ${snippet}` });
+      }
+
       return findings;
     },
   },
