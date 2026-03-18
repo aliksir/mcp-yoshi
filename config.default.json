@@ -7,7 +7,9 @@
       "privateKeys": true,
       "highEntropy": true,
       "envValues": true,
-      "pii": true
+      "pii": true,
+      "largePayload": true,
+      "pathTraversal": true
     },
     "inbound": {
       "promptInjection": true,
@@ -16,7 +18,13 @@
       "scriptInjection": true,
       "toolTampering": true,
       "asciiSmuggling": true,
-      "base64Payload": true
+      "base64Payload": true,
+      "responseSizeLimit": true,
+      "hiddenFields": true,
+      "elicitationAbuse": true,
+      "samplingInjection": true,
+      "logToLeak": true,
+      "conversationMarker": true
     }
   },
   "allowlist": [],
@@ -24,7 +32,7 @@
     "*": { "enabled": true }
   },
   "severity": {
-    "WARN": ["highEntropy", "pii", "suspiciousUrls", "base64Payload"],
-    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands", "scriptInjection", "toolTampering", "envValues", "asciiSmuggling"]
+    "WARN": ["highEntropy", "pii", "suspiciousUrls", "base64Payload", "responseSizeLimit", "hiddenFields", "largePayload", "conversationMarker", "logToLeak"],
+    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands", "scriptInjection", "toolTampering", "envValues", "asciiSmuggling", "elicitationAbuse", "pathTraversal", "samplingInjection"]
   }
 }

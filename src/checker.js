@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { loadConfig, getServerConfig, parseServerName, getAllowlistEntry } = require('./config');
+const { loadConfig, getServerConfig, parseServerName, parseToolBaseName, getAllowlistEntry } = require('./config');
 const { runOutboundChecks, CHECKS: OUTBOUND_CHECKS } = require('./checks/outbound');
 const { runInboundChecks, CHECKS: INBOUND_CHECKS } = require('./checks/inbound');
 const { log } = require('./logger');
@@ -14,6 +14,9 @@ const RATE_WINDOW_MS = 60000;
 const RATE_LIMIT = 10;
 const CALL_HISTORY_MAX_ENTRIES = 1000;
 const callHistory = new Map();
+
+// SHADOW-001: Tool Shadowing Detection — ツール名→サーバー名のマッピング（セッション内）
+const toolServerMap = new Map();
 
 function checkRateLimit(toolName) {
   if (!toolName) return null;
@@ -39,6 +42,28 @@ function checkRateLimit(toolName) {
       name: 'Rapid Fire Detection',
       severity: 'WARN',
       message: `Tool '${toolName}' called ${count} times in ${RATE_WINDOW_MS / 1000}s (limit: ${RATE_LIMIT})`,
+    };
+  }
+
+  return null;
+}
+
+function checkToolShadowing(toolName) {
+  const baseName = parseToolBaseName(toolName);
+  const serverName = parseServerName(toolName);
+  if (!baseName || !serverName) return null;
+
+  const existingServer = toolServerMap.get(baseName);
+  if (!existingServer) {
+    toolServerMap.set(baseName, serverName);
+    return null;
+  }
+
+  if (existingServer !== serverName) {
+    return {
+      id: 'SHADOW-001',
+      name: 'Tool Shadowing',
+      matched: `Tool '${baseName}' registered by '${existingServer}', now called from '${serverName}'`,
     };
   }
 
@@ -77,6 +102,7 @@ function saveHashes() {
 function resetHashState() {
   toolDefinitionHashes.clear();
   hashesLoaded = false;
+  toolServerMap.clear();
 }
 
 // CHECK_ID_MAP を CHECKS 定義から自動構築（二重管理の排除）
@@ -177,6 +203,12 @@ function checkOutbound(hookData, config) {
   const rugPullFinding = checkRugPull(hookData);
   if (rugPullFinding) {
     findings.push(rugPullFinding);
+  }
+
+  // SHADOW-001: Tool Shadowing検出
+  const shadowFinding = checkToolShadowing(toolName);
+  if (shadowFinding) {
+    findings.push(shadowFinding);
   }
 
   const severity = determineSeverity(config, findings);
@@ -310,4 +342,4 @@ async function run(direction) {
   process.exit(output.exitCode);
 }
 
-module.exports = { run, checkOutbound, checkInbound, determineSeverity, flattenToString, checkRugPull, toolDefinitionHashes, loadHashes, saveHashes, resetHashState, HASH_FILE_PATH, checkRateLimit, callHistory, RATE_WINDOW_MS, RATE_LIMIT };
+module.exports = { run, checkOutbound, checkInbound, determineSeverity, flattenToString, checkRugPull, toolDefinitionHashes, loadHashes, saveHashes, resetHashState, HASH_FILE_PATH, checkRateLimit, callHistory, RATE_WINDOW_MS, RATE_LIMIT, toolServerMap, checkToolShadowing };
