@@ -5,7 +5,7 @@ const ASCII_SMUGGLING_PATTERN = /[\u{E0000}-\u{E007F}]/u;
 const ZERO_WIDTH_PATTERN = /[\u200B\u200C\u200D\uFEFF\u2060]/;
 
 // IN-008: Response Size Limit
-const MAX_RESPONSE_BYTES = 200000;
+const MAX_RESPONSE_BYTES = 512000;
 
 const CHECKS = {
   promptInjection: {
@@ -242,6 +242,48 @@ const CHECKS = {
 
       return findings;
     },
+  },
+
+  // IN-011: Sampling Injection — LLMトークナイザマーカー検出
+  samplingInjection: {
+    id: 'IN-011',
+    name: 'Sampling Injection',
+    patterns: [
+      /\[INST\]/i,
+      /\[\/INST\]/i,
+      /<<SYS>>/,
+      /<<\/SYS>>/,
+      /<\|im_start\|>\s*system/i,
+      /<\|im_end\|>/,
+      /<\|system\|>/i,
+      /<\|user\|>/i,
+      /<\|assistant\|>/i,
+      /\[SYSTEM_PROMPT\]/i,
+      /<start_of_turn>\s*(?:user|model)/i,
+      /<\|endoftext\|>/,
+    ],
+  },
+
+  // IN-012: Log-To-Leak — データ窃取指示検出
+  logToLeak: {
+    id: 'IN-012',
+    name: 'Log-To-Leak',
+    patterns: [
+      /\b(?:send|post|forward|transmit|upload|log|report)\s+(?:this|the|all|these|that)\s+(?:data|information|content|result|output|response)\s+(?:to|via|through|using)\b/i,
+      /\b(?:call|invoke|use|execute)\s+(?:the\s+)?(?:logging|analytics|telemetry|monitoring|webhook)\s+(?:tool|service|api|endpoint)\b/i,
+      /\bcurl\s+.*?-d\s+.*?\b(?:log|analytics|telemetry)\b/i,
+      /\bfetch\s*\(\s*['"]https?:\/\/[^'"]*(?:log|analytics|telemetry|webhook)\b/i,
+    ],
+  },
+
+  // IN-013: Conversation Marker — 会話マーカー検出（行頭限定）
+  conversationMarker: {
+    id: 'IN-013',
+    name: 'Conversation Marker',
+    patterns: [
+      /^Human:\s/m,
+      /^Assistant:\s/m,
+    ],
   },
 };
 

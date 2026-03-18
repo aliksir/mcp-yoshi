@@ -63,6 +63,12 @@ function parseServerName(toolName) {
   return match ? match[1] : null;
 }
 
+function parseToolBaseName(toolName) {
+  // mcp__<server>__<tool> → tool
+  const match = toolName.match(/^mcp__[^_]+__(.+)$/);
+  return match ? match[1] : null;
+}
+
 function resolveLogDir(config) {
   const logDir = config.logDir.replace(/^~/, os.homedir());
   return logDir;
@@ -126,7 +132,7 @@ function saveUserConfig(userConfig) {
 }
 
 module.exports = {
-  loadConfig, getServerConfig, parseServerName, resolveLogDir, deepMerge,
+  loadConfig, getServerConfig, parseServerName, parseToolBaseName, resolveLogDir, deepMerge,
   isAllowlisted, getAllowlistEntry, listAllowlist, addToAllowlist, removeFromAllowlist,
   USER_CONFIG_PATH,
 };
