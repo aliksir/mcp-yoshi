@@ -15,5 +15,7 @@ jobs:
         with:
           node-version: '20'
       - run: npm install --ignore-scripts
+      - name: Syntax check
+        run: node --check bin/mcp-yoshi.js && node --check src/checker.js
       - name: Run tests
         run: npm test
