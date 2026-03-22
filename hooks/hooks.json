@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mcp-yoshi check --direction outbound",
+            "timeout": 10,
+            "statusMessage": "mcp-yoshi: checking outbound..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mcp-yoshi check --direction inbound",
+            "timeout": 10,
+            "statusMessage": "mcp-yoshi: checking inbound..."
+          }
+        ]
+      }
+    ]
+  }
+}

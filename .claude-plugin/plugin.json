@@ -1,0 +1,13 @@
+{
+  "name": "mcp-yoshi",
+  "version": "1.3.0",
+  "description": "MCP communication security filter for Claude Code — real-time outbound/inbound request validation",
+  "author": {
+    "name": "aliks",
+    "url": "https://github.com/aliksir"
+  },
+  "homepage": "https://github.com/aliksir/mcp-yoshi",
+  "repository": "https://github.com/aliksir/mcp-yoshi",
+  "license": "MIT",
+  "keywords": ["mcp", "security", "filter", "hooks", "claude-code"]
+}
