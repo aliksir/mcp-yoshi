@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.3.1 (2026-03-22)
+
+- **package.json files配列修正**: `commands/`, `hooks/`, `README.ja.md` をnpm publishパッケージに追加
+- **README.ja.md新規作成**: README.mdの完全日本語版を追加
+- **CI強化**: Node.js構文チェック（`node --check`）をGitHub Actions CIに追加
+- **統合テスト追加**: `test/integration.js`（hook JSON入出力の結合テスト）をリポジトリに追加
+
+## v1.3.0 (2026-03-18)
+
+- **4つのセキュリティチェック追加** — MCP通信防御強化（20 → 24チェック）
+  - `IN-011` Sampling Injection (BLOCK): LLMトークナイザマーカー（`[INST]`, `<<SYS>>`, `<|im_start|>` 等）の埋め込み検出
+  - `IN-012` Log-To-Leak (WARN): ツールレスポンス内のデータ窃取指示（「send this data to...」「call the logging tool」等）
+  - `IN-013` Conversation Marker (WARN): 会話マーカー（`Human:`, `Assistant:`）の行頭埋め込み
+  - `SHADOW-001` Tool Shadowing (BLOCK): 異なるサーバーからの同名ツール登録を検知
+- **設定バグ修正**: v1.2.0で追加したIN-008/009/010, OUT-006/007が `config.default.json` に未登録で実質無効だった問題を修正
+- **IN-008レスポンスサイズ上限変更**: 200KB → 512KB（MCP Discussion #2211コミュニティ推奨値）
+
 ## v1.2.0 (2026-03-16)
 
 - **6 new checks** — MCP通信路特化の検出強化（12 → 18チェック）
