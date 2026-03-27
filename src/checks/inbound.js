@@ -130,7 +130,7 @@ const CHECKS = {
   base64Payload: {
     id: 'IN-007',
     name: 'Base64 Encoded Payload',
-    check: (text) => {
+    check: (text, enabledChecks) => {
       // 40文字以上のBase64文字列を抽出
       const b64Matches = text.match(/[A-Za-z0-9+/]{40,}={0,2}/g) || [];
       const findings = [];
@@ -143,9 +143,11 @@ const CHECKS = {
         }
         // デコード結果が有効なテキストでない場合スキップ
         if (!/^[\x20-\x7E\s]{10,}$/.test(decoded)) continue;
-        // デコード結果をIN-001〜005のパターンで再チェック
-        for (const [, check] of Object.entries(CHECKS)) {
+        // デコード結果をIN-001〜005のパターンで再チェック（enabledChecks設定を尊重）
+        for (const [checkNameInner, check] of Object.entries(CHECKS)) {
           if (!check.patterns) continue;
+          // enabledChecks が渡された場合のみ有効/無効を考慮（未渡しなら全チェック実施）
+          if (enabledChecks && !enabledChecks[checkNameInner]) continue;
           for (const pattern of check.patterns) {
             if (pattern.test(decoded)) {
               findings.push({
@@ -299,8 +301,9 @@ function runInboundChecks(text, enabledChecks) {
     if (check.check) {
       // カスタムチェック関数（IN-006 ASCII Smuggling, IN-007 Base64）
       // ASCII Smugglingは正規化前のテキストでチェック（正規化で消える文字を検出するため）
+      // IN-007 Base64は内部で他チェックを再実行するため enabledChecks を第2引数で渡す
       const targetText = checkName === 'asciiSmuggling' ? text : normalizedText;
-      const results = check.check(targetText);
+      const results = check.check(targetText, enabledChecks);
       for (const result of results) {
         findings.push({
           id: check.id,

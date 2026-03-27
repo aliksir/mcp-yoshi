@@ -59,7 +59,10 @@ function getServerConfig(config, serverName) {
 
 function parseServerName(toolName) {
   // mcp__<server>__<tool> → server
-  const match = toolName.match(/^mcp__([^_]+)__/);
+  // 非貪欲マッチ (.+?) で末尾の __ まで最短一致させる。
+  // これによりサーバー名にアンダースコアを含むケース（例: mcp__my_server__tool）も正しく
+  // 「my_server」全体が取得できる。旧パターン [^_]+ では「my」のみ取得していた。
+  const match = toolName.match(/^mcp__(.+?)__/);
   return match ? match[1] : null;
 }
 

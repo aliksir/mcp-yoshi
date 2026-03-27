@@ -169,7 +169,11 @@ function checkRugPull(hookData) {
   const previousHash = toolDefinitionHashes.get(toolName);
   if (hash !== previousHash) {
     // ツール定義が変更された → Rug Pull疑い
-    toolDefinitionHashes.set(toolName, hash); // 新しいハッシュに更新
+    // NOTE: 検出後は新しいハッシュをそのまま更新して保存する。
+    // これにより同じ変更内容での2回目以降の呼び出しではRUG-001は発火しない（1回警告のみ）。
+    // 意図的な設計: 毎回アラートを出すと攻撃者にハッシュ更新のタイミングを悪用される可能性があるため、
+    // 変更発生時に1回警告してハッシュを新しい値に更新する。継続的な監視はログで行うこと。
+    toolDefinitionHashes.set(toolName, hash); // 新しいハッシュに更新（以降は新定義として扱う）
     saveHashes();
     return {
       id: 'RUG-001',
@@ -197,7 +201,7 @@ function checkOutbound(hookData, config) {
   if (!serverConfig.enabled) return { severity: 'PASS', findings: [], skipped: true, server: serverName };
 
   const text = flattenToString(hookData.tool_input);
-  const findings = runOutboundChecks(text, serverConfig.checks.outbound);
+  const findings = runOutboundChecks(text, serverConfig.checks.outbound, hookData.tool_input);
 
   // P5: Rug Pull検出（outbound時にツール定義をチェック）
   const rugPullFinding = checkRugPull(hookData);
