@@ -287,6 +287,41 @@ const CHECKS = {
       /^Assistant:\s/m,
     ],
   },
+  // IN-014: Credentials in Response — stdout/stderr内の認証情報検出
+  // 研究根拠: 17,022件AIスキル監査で漏洩の73.5%がprint/console.log残留が原因
+  credentialsInResponse: {
+    id: 'IN-014',
+    name: 'Credentials in Response',
+    check: (text) => {
+      const findings = [];
+      const patterns = {
+        'AWS Access Key': /AKIA[0-9A-Z]{16}/,
+        'OpenAI/Anthropic API Key': /sk-[a-zA-Z0-9_-]{20,}/,
+        'GitHub Token': /gh[pos]_[A-Za-z0-9_]{36,}/,
+        'GitLab Token': /glpat-[a-zA-Z0-9_-]{20,}/,
+        'Slack Token': /xox[bpas]-[0-9a-zA-Z-]{10,}/,
+        'Google API Key': /AIza[0-9A-Za-z_-]{35}/,
+        'Stripe Key': /[sr]k_(?:live|test)_[0-9a-zA-Z]{24,}/,
+        'Bearer Token': /Bearer\s+[A-Za-z0-9_\-.]{20,}/,
+        'Private Key Block': /-----BEGIN\s+(?:RSA|EC|DSA|OPENSSH|PGP)?\s*PRIVATE KEY-----/,
+        'Password Assignment': /(?:password|passwd)\s*[=:]\s*['"]?\S{8,}/i,
+        'Credential Env Exposure': /(?:API_KEY|SECRET_KEY|AUTH_TOKEN|ACCESS_TOKEN|CREDENTIAL)\s*[=:]\s*['"]?\S{8,}/i,
+      };
+
+      for (const [name, pattern] of Object.entries(patterns)) {
+        const match = text.match(pattern);
+        if (match) {
+          // マスク処理: 先頭8文字 + *** で秘匿
+          const masked = match[0].length > 8
+            ? match[0].slice(0, 8) + '***'
+            : match[0];
+          findings.push({ matched: `${name}: ${masked}` });
+          break;
+        }
+      }
+      return findings;
+    },
+  },
 };
 
 function runInboundChecks(text, enabledChecks) {
