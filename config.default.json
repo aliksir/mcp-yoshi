@@ -24,7 +24,8 @@
       "elicitationAbuse": true,
       "samplingInjection": true,
       "logToLeak": true,
-      "conversationMarker": true
+      "conversationMarker": true,
+      "credentialsInResponse": true
     }
   },
   "allowlist": [],
@@ -33,6 +34,6 @@
   },
   "severity": {
     "WARN": ["highEntropy", "pii", "suspiciousUrls", "base64Payload", "responseSizeLimit", "hiddenFields", "largePayload", "conversationMarker", "logToLeak"],
-    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands", "scriptInjection", "toolTampering", "envValues", "asciiSmuggling", "elicitationAbuse", "pathTraversal", "samplingInjection"]
+    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands", "scriptInjection", "toolTampering", "envValues", "asciiSmuggling", "elicitationAbuse", "pathTraversal", "samplingInjection", "credentialsInResponse"]
   }
 }
