@@ -1,5 +1,62 @@
 # Changelog
 
+## v1.4.0 (2026-04-17) — Supply Chain Defense
+
+CVE-2026-40933 (Flowise Authenticated RCE Via MCP Adapters) と同型攻撃クラスへの防御強化、および Flowise 59件アドバイザリ（2026-04-16一斉公開、Anthropic researcher igor-magun-wd 起点の "Anthropic MCP Supply Chain Vulnerability" series）由来の防御パターン群を追加。
+
+### IN-002 拡張: Node.js エコシステム + NODE_OPTIONS
+
+既存 Shell Command Embedding チェックに以下パターンを追加:
+- `npx -c <cmd>`, `npx --call <cmd>` — CVE-2026-40933 同型
+- `npm exec -- <pkg>`, `npm exec -c <cmd>` — npm v7+ セパレータ形式対応
+- `pnpm exec -c`, `pnpm dlx -c`, `yarn dlx -c`, `bun x -c`, `bun -e`, `bun exec -c`
+- `deno eval`, `deno repl`, `deno -e`, `deno -p`
+- `NODE_OPTIONS` 経由の `--experimental-loader` / `--import` / `--require` / `--inspect-brk`
+- `--experimental-loader=data:text/javascript,...` (= 区切り版、GHSA-cvrr-qhgw-2mm6 主要 PoC 形式)
+
+### 新規 6 ルール追加
+
+- `IN-015` Parameter Override / OverrideConfig (BLOCK): `overrideConfig` キー + 値内に `mcpServerConfig`/`NODE_OPTIONS`/`executablePath` を含む組み合わせ攻撃 (GHSA-cvrr-qhgw-2mm6, GHSA-5cph-wvm9-45gj)
+- `IN-017` Path Traversal (BLOCK): `../`/`..\\` ディレクトリ移動 + `basePath`/`filePath`/`filename`/`filepath` への機密パス指定 (`/etc/`, `/root/`, `C:\Windows\`, `/proc/`) (GHSA-w6v6-49gh-mc9w 他5件)
+- `IN-018` Query Injection — **BLOCK + WARN 分離設計**:
+  - BLOCK: `MATCH ... DETACH DELETE`, `DROP TABLE`, `UNION SELECT`, `;--`
+  - WARN: `' OR/AND '...'`, `sleep(...)` (time-based) — 偽陽性リスク考慮
+  - (GHSA-28g4-38q8-3cwc Cypher, GHSA-9c4c-g95m-c8cp SQL)
+- `IN-019` Sandbox Escape (BLOCK): `globalThis.process.mainModule.require`, `process.binding()`, `constructor.constructor()` (vm2 escape), `__proto__.constructor` (GHSA-435c-mg9p-fv22, GHSA-xhmj-rg95-44hv)
+- `IN-020` Header Spoofing (WARN): `x-request-from: internal`, `x-forwarded-for: 127.0.0.1`, `x-real-ip: localhost` (GHSA-wvhq-wp8g-c7vq)
+- `IN-021` Browser Launch RCE (BLOCK): Puppeteer/Playwright `executablePath` にシェルバイナリ (`/bin/sh`, `/bin/bash`, `/usr/bin/nc` 等) または `ignoreDefaultArgs: true` + 危険 args (GHSA-5w3r-f6gm-c25w)
+
+### CHECK メタデータ拡張（v1.4 新仕様）
+
+各 CHECK に以下フィールドを追加:
+- `severity`: 'BLOCK' | 'WARN' (コード側メタ、config.default.json と併存)
+- `references`: ['GHSA-XXXX-XXXX-XXXX', ...] (出典 GHSA 配列)
+
+### テストフィクスチャ新設
+
+`test/fixtures/ghsa-payloads/` ディレクトリを新設、8件の GHSA PoC を JSON 形式で配置。トレーサビリティ向上。
+
+### テスト
+
+184件全 PASS（既存テストの劣化ゼロ）。新規テスト 152件追加。
+
+### 検出統計（v1.3.1 → v1.4.0）
+
+- Inbound: 14 → 21 チェック (+7、IN-018 split含む)
+- IN-002 検出パターン: +9 種
+- Flowise 59件アドバイザリのうち 約40件 (68%) を mcp-yoshi で防御範囲化
+
+### v1.5 Backlog (本リリースから DROP)
+
+- IN-016 Mass Assignment / IDOR — `runInboundChecks` インターフェース拡張と併せて再検討
+- IN-022 Function constructor — 既存 IN-004 (`Function(`) で既にカバー済（重複回避）
+
+### 出典
+
+- CVE-2026-40933 / GHSA-c9gw-hvqq-f33r — https://github.com/FlowiseAI/Flowise/security/advisories/GHSA-c9gw-hvqq-f33r
+- Flowise 59件 Security Advisories (2026-04-16) — https://github.com/FlowiseAI/Flowise/security/advisories
+- 起点 X 投稿 (Moshe Siman Tov Bustan / MosesOX) — https://x.com/moshetov/status/2044835423730741680
+
 ## v1.3.1 (2026-03-22)
 
 - **package.json files配列修正**: `commands/`, `hooks/`, `README.ja.md` をnpm publishパッケージに追加

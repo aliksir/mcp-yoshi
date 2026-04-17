@@ -1,0 +1,8 @@
+{
+  "ghsa": "GHSA-9c4c-g95m-c8cp",
+  "cve": null,
+  "title": "Authenticated SQL Injection to DB (UNION SELECT)",
+  "expected_check": "IN-018",
+  "expected_severity": "BLOCK",
+  "payload": "SELECT * FROM users UNION SELECT password, NULL, NULL FROM admins"
+}

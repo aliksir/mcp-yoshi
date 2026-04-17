@@ -1,0 +1,8 @@
+{
+  "ghsa": "GHSA-wvhq-wp8g-c7vq",
+  "cve": null,
+  "title": "Auth Bypass via Spoofed x-request-from Header",
+  "expected_check": "IN-020",
+  "expected_severity": "WARN",
+  "payload": "x-request-from: internal"
+}

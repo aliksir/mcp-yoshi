@@ -25,7 +25,14 @@
       "samplingInjection": true,
       "logToLeak": true,
       "conversationMarker": true,
-      "credentialsInResponse": true
+      "credentialsInResponse": true,
+      "parameterOverride": true,
+      "pathTraversal": true,
+      "queryInjectionBlock": true,
+      "queryInjectionWarn": true,
+      "sandboxEscape": true,
+      "headerSpoofing": true,
+      "browserLaunchRCE": true
     }
   },
   "allowlist": [],
@@ -33,7 +40,7 @@
     "*": { "enabled": true }
   },
   "severity": {
-    "WARN": ["highEntropy", "pii", "suspiciousUrls", "base64Payload", "responseSizeLimit", "hiddenFields", "largePayload", "conversationMarker", "logToLeak"],
-    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands", "scriptInjection", "toolTampering", "envValues", "asciiSmuggling", "elicitationAbuse", "pathTraversal", "samplingInjection", "credentialsInResponse"]
+    "WARN": ["highEntropy", "pii", "suspiciousUrls", "base64Payload", "responseSizeLimit", "hiddenFields", "largePayload", "conversationMarker", "logToLeak", "headerSpoofing", "queryInjectionWarn"],
+    "BLOCK": ["apiKeys", "privateKeys", "promptInjection", "shellCommands", "scriptInjection", "toolTampering", "envValues", "asciiSmuggling", "elicitationAbuse", "pathTraversal", "samplingInjection", "credentialsInResponse", "parameterOverride", "queryInjectionBlock", "sandboxEscape", "browserLaunchRCE"]
   }
 }

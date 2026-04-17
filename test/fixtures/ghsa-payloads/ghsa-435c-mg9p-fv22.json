@@ -1,0 +1,8 @@
+{
+  "ghsa": "GHSA-435c-mg9p-fv22",
+  "cve": null,
+  "title": "Multi-Tenant Variable Disclosure via Custom JS Sandbox Escape",
+  "expected_check": "IN-019",
+  "expected_severity": "BLOCK",
+  "payload": "globalThis.process.mainModule.require('child_process').execSync('id').toString()"
+}

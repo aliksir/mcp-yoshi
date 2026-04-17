@@ -47,6 +47,16 @@ const CHECKS = {
       /\b(?:Invoke-WebRequest|iwr|Invoke-RestMethod|irm)\s/i,
       // スクリプト言語の直接実行
       /\b(?:python3?|node|ruby|perl)\s+-[ec]\s/i,
+      // Node.js エコシステム パッケージランナー RCE (CVE-2026-40933 同型)
+      /\b(?:npx|pnpm\s+(?:exec|dlx)|yarn\s+dlx|bun\s+(?:x|exec))\s+(?:-c|--call)\s/i,
+      /\bnpm\s+exec(?:\s+--|\s+(?:-c|--call))\s/i,  // npm v7+ -- セパレータ対応
+      /\bbun\s+-e\s/i,
+      // Deno
+      /\bdeno\s+(?:eval|repl)\b/i,
+      /\bdeno\s+-[ep]\s/i,
+      // NODE_OPTIONS 経由
+      /NODE_OPTIONS\s*[=:][^"]*--(?:experimental-loader|import|require|inspect-brk)\b/i,
+      /--experimental-loader[=\s]+data:text\/javascript/i,  // = 区切り対応
       // 環境変数展開攻撃（シェル変数の悪用）
       /\$\{IFS\}/,
       /\$\{(?:PATH|HOME|USER)\}[^a-zA-Z]*(?:rm|curl|wget|sudo|chmod)\b/i,
@@ -318,6 +328,140 @@ const CHECKS = {
           findings.push({ matched: `${name}: ${masked}` });
           break;
         }
+      }
+      return findings;
+    },
+  },
+  // IN-015: Parameter Override / OverrideConfig Attack (GHSA-cvrr-qhgw-2mm6, GHSA-5cph-wvm9-45gj)
+  parameterOverride: {
+    id: 'IN-015',
+    name: 'Parameter Override / OverrideConfig Attack',
+    severity: 'BLOCK',
+    references: ['GHSA-cvrr-qhgw-2mm6', 'GHSA-5cph-wvm9-45gj'],
+    check: (text) => {
+      const findings = [];
+      // overrideConfig キーが存在し、かつ値内に危険トークンが含まれる場合のみ発火
+      if (/\boverrideConfig\b\s*["']?\s*[:=]/i.test(text)) {
+        if (/\b(?:mcpServerConfig|NODE_OPTIONS|executablePath)\b/i.test(text)) {
+          const snippet = text.slice(0, 80).replace(/\n/g, ' ');
+          findings.push({ matched: `overrideConfig with dangerous token: ${snippet}` });
+        }
+      }
+      // コメント挿入バイパスパターン (FILE-STORAGE::*/)
+      if (/FILE-STORAGE::\s*\*\//i.test(text)) {
+        findings.push({ matched: 'FILE-STORAGE comment injection bypass detected' });
+      }
+      return findings;
+    },
+  },
+
+  // IN-017: Path Traversal (File R/W ツール) (GHSA-w6v6-49gh-mc9w, GHSA-jv9m-vf54-chjj, GHSA-j44m-5v8f-gc9c, GHSA-99pg-hqvx-r4gf, GHSA-pr8x-mr56-fx5p, GHSA-8vvx-qvq9-5948)
+  pathTraversal: {
+    id: 'IN-017',
+    name: 'Path Traversal',
+    severity: 'BLOCK',
+    references: ['GHSA-w6v6-49gh-mc9w', 'GHSA-jv9m-vf54-chjj', 'GHSA-j44m-5v8f-gc9c', 'GHSA-99pg-hqvx-r4gf', 'GHSA-pr8x-mr56-fx5p', 'GHSA-8vvx-qvq9-5948'],
+    check: (text) => {
+      const findings = [];
+      // ../ または ..\ によるディレクトリ移動 — ただし node_modules/../ など無害パターンを除外
+      // 先頭・空白・引用符・等号の後の ../ のみ検出（スラッシュの後は除外して node_modules/../ を回避）
+      if (/(?:^|["'\s=])\.{2}[/\\]/.test(text)) {
+        findings.push({ matched: 'Path traversal (../) detected' });
+      }
+      // basePath/filePath/filename/filepath に機密パスが指定されている場合
+      // JSON形式 ("basePath": "/etc/") と通常形式 (basePath: /etc/) の両方に対応
+      // JSON エスケープされたバックスラッシュ (`\\`) も検出するため `\\+` で1+回マッチ
+      if (/(?:basePath|filePath|filename|filepath)["']?\s*[:=]\s*["']?(?:\/etc\/|\/root\/|C:\\+Windows\\+|\/proc\/)/i.test(text)) {
+        findings.push({ matched: 'Sensitive path in file parameter detected' });
+      }
+      return findings;
+    },
+  },
+
+  // IN-018: Query Injection (SQL/Cypher/NoSQL) — BLOCK + WARN 分離
+  // BLOCK パターン: 構文が明確なSQL/Cypher破壊コマンド
+  queryInjectionBlock: {
+    id: 'IN-018',
+    name: 'Query Injection (BLOCK)',
+    severity: 'BLOCK',
+    references: ['GHSA-28g4-38q8-3cwc', 'GHSA-9c4c-g95m-c8cp'],
+    patterns: [
+      // Cypher 破壊的クエリ
+      /\bMATCH\s*\([^)]*\)\s*(?:DETACH\s+)?DELETE\b/i,
+      // SQL 破壊的コマンド
+      /\b(?:DROP|TRUNCATE)\s+(?:TABLE|DATABASE)\b/i,
+      // UNION SELECT インジェクション
+      /UNION\s+(?:ALL\s+)?SELECT\b/i,
+      // SQL コメント注入
+      /;\s*--/,
+    ],
+  },
+
+  // IN-018W: Query Injection WARN パターン（自然文との衝突リスクがあるもの）
+  queryInjectionWarn: {
+    id: 'IN-018W',
+    name: 'Query Injection (WARN)',
+    severity: 'WARN',
+    references: ['GHSA-28g4-38q8-3cwc', 'GHSA-9c4c-g95m-c8cp'],
+    patterns: [
+      // OR/AND インジェクション（自然文衝突リスクあり）
+      /'\s*(?:OR|AND)\s+['0-9]/i,
+      // time-based ブラインドインジェクション
+      /\bsleep\s*\(\s*\d+\s*\)/i,
+    ],
+  },
+
+  // IN-019: Sandbox Escape (vm/Function/global access) (GHSA-435c-mg9p-fv22, GHSA-xhmj-rg95-44hv)
+  sandboxEscape: {
+    id: 'IN-019',
+    name: 'Sandbox Escape',
+    severity: 'BLOCK',
+    references: ['GHSA-435c-mg9p-fv22', 'GHSA-xhmj-rg95-44hv'],
+    patterns: [
+      // global/globalThis 経由の process アクセス
+      /\bglobal(?:This)?\.process\.mainModule\.require\b/i,
+      // process.binding による低レベルアクセス
+      /\bprocess\.binding\s*\(/i,
+      // constructor チェーンによる vm2 エスケープ
+      /\bconstructor\.constructor\s*\(/i,
+      // __proto__ 経由のコンストラクタアクセス
+      /\b__proto__\.constructor\b/i,
+    ],
+  },
+
+  // IN-020: Header 偽装（信頼境界バイパス） (GHSA-wvhq-wp8g-c7vq)
+  headerSpoofing: {
+    id: 'IN-020',
+    name: 'Header Spoofing',
+    severity: 'WARN',
+    references: ['GHSA-wvhq-wp8g-c7vq'],
+    patterns: [
+      // x-request-from: internal — 内部リクエスト偽装
+      /x-request-from\s*:\s*internal/i,
+      // x-forwarded-for: 127.0.0.1 — ループバック偽装
+      /x-forwarded-for\s*:\s*127\.0\.0\.1/i,
+      // x-real-ip: localhost — ローカルホスト偽装
+      /x-real-ip\s*:\s*localhost/i,
+    ],
+  },
+
+  // IN-021: ブラウザ起動引数経由のコマンド実行 (Puppeteer/Playwright) (GHSA-5w3r-f6gm-c25w)
+  browserLaunchRCE: {
+    id: 'IN-021',
+    name: 'Browser Launch RCE',
+    severity: 'BLOCK',
+    references: ['GHSA-5w3r-f6gm-c25w'],
+    check: (text) => {
+      const findings = [];
+      // executablePath にシェルバイナリが指定されている場合
+      // JSONキー形式 ("executablePath": "/bin/sh") と通常形式 (executablePath: /bin/sh) に対応
+      if (/executablePath["']?\s*[:=]\s*["']\/(?:bin\/(?:sh|bash|nc)|usr\/bin\/(?:nc|ncat|socat))/i.test(text)) {
+        findings.push({ matched: 'executablePath set to shell/netcat binary — potential RCE' });
+      }
+      // ignoreDefaultArgs: true + シェルオプション引数の組み合わせ
+      if (/ignoreDefaultArgs["']?\s*[:=]\s*true/i.test(text) &&
+          /args["']?\s*[:=]\s*\[[^\]]*["'][- ](?:e|c)["']/i.test(text)) {
+        findings.push({ matched: 'ignoreDefaultArgs:true with shell-like args — potential RCE' });
       }
       return findings;
     },

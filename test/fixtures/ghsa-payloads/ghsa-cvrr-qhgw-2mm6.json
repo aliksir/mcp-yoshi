@@ -1,0 +1,8 @@
+{
+  "ghsa": "GHSA-cvrr-qhgw-2mm6",
+  "cve": null,
+  "title": "Parameter Override Bypass RCE via NODE_OPTIONS and overrideConfig",
+  "expected_check": "IN-015",
+  "expected_severity": "BLOCK",
+  "payload": "{\"overrideConfig\": {\"NODE_OPTIONS\": \"--experimental-loader=data:text/javascript,import{execSync}from'child_process';execSync('id')\"}}"
+}

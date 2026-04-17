@@ -1,0 +1,8 @@
+{
+  "ghsa": "GHSA-w6v6-49gh-mc9w",
+  "cve": null,
+  "title": "Path Traversal in Vector Store basePath",
+  "expected_check": "IN-017",
+  "expected_severity": "BLOCK",
+  "payload": "{\"basePath\": \"/etc/shadow\"}"
+}

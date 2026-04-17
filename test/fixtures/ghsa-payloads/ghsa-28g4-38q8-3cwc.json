@@ -1,0 +1,8 @@
+{
+  "ghsa": "GHSA-28g4-38q8-3cwc",
+  "cve": null,
+  "title": "Cypher Injection in GraphCypherQAChain (MATCH DETACH DELETE)",
+  "expected_check": "IN-018",
+  "expected_severity": "BLOCK",
+  "payload": "MATCH (n) DETACH DELETE n"
+}
