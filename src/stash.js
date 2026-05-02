@@ -9,6 +9,9 @@ const crypto = require('crypto');
 
 const DEFAULT_STASH_DIR = path.join(os.homedir(), '.mcp-yoshi', 'stash');
 
+// m3: キー生成リトライ上限（magic number → 定数化）
+const MAX_KEY_GENERATION_RETRIES = 3;
+
 // stash ディレクトリを返す（~ 展開対応）
 function getStashDir(stashConfig) {
   const dir = (stashConfig && stashConfig.dir)
@@ -27,11 +30,18 @@ function generateKey(server, tool, timestamp) {
   return `${safeServer}__${safeTool}__${timestamp}_${rand}`;
 }
 
+// W-1: YYYYMMDD 文字列生成ヘルパー（getDateDir / stashGet / stashList の重複を統一）
+function formatDateYYYYMMDD(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}${mm}${dd}`;
+}
+
 // 日付ディレクトリパスを返す（YYYYMMDD 形式）
 function getDateDir(stashDir, timestamp) {
   const d = new Date(timestamp);
-  const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  return path.join(stashDir, dateStr);
+  return path.join(stashDir, formatDateYYYYMMDD(d));
 }
 
 // stash 書込
@@ -52,33 +62,40 @@ function stashWrite(maskedText, meta, stashConfig) {
     // Windows / 非対応 FS では無視（既存ファイル chmod と同じ扱い）
   }
 
-  let key, filePath, attempts = 0;
-  do {
+  // EFF-m1: existsSync を削除し flag:'wx'(O_EXCL) の atomic 検出のみで衝突判定
+  let filePath, key;
+  let attempts = 0;
+  while (true) {
+    attempts++;
+    if (attempts > MAX_KEY_GENERATION_RETRIES) {
+      throw new Error(`Failed to generate unique stash key after ${MAX_KEY_GENERATION_RETRIES} attempts`);
+    }
     key = generateKey(meta.server, meta.tool, ts);
     filePath = path.join(dateDir, `${key}.jsonl`);
-    attempts++;
-    if (attempts > 3) throw new Error('key collision after 3 retries');
-  } while (fs.existsSync(filePath));
 
-  const line = JSON.stringify({
-    key,
-    server: meta.server,
-    tool: meta.tool,
-    ts,
-    text: maskedText,
-  }) + '\n';
+    const line = JSON.stringify({
+      key,
+      server: meta.server,
+      tool: meta.tool,
+      ts,
+      text: maskedText,
+    }) + '\n';
 
-  fs.writeFileSync(filePath, line, { encoding: 'utf8', flag: 'wx' });
-
-  // Unix: owner-only パーミッション設定（AC-9）
-  // Windows: chmod は no-op のため README で明記
-  try {
-    fs.chmodSync(filePath, 0o600);
-  } catch {
-    // Windows 等で chmod 失敗しても継続（no-op 扱い）
+    try {
+      fs.writeFileSync(filePath, line, { flag: 'wx', encoding: 'utf8' });
+      // Unix: owner-only パーミッション設定（AC-9）
+      // Windows: chmod は no-op のため README で明記
+      try {
+        fs.chmodSync(filePath, 0o600);
+      } catch {
+        // Windows 等で chmod 失敗しても継続（no-op 扱い）
+      }
+      return { key, path: filePath, size: Buffer.byteLength(line, 'utf8') };
+    } catch (err) {
+      if (err.code === 'EEXIST') continue;  // 衝突 → キー再生成
+      throw err;  // 他のエラーは伝播
+    }
   }
-
-  return { key, path: filePath, size: Buffer.byteLength(line, 'utf8') };
 }
 
 // stash 読出
@@ -97,11 +114,10 @@ function stashGet(key, stashConfig) {
   if (tsMatch) {
     const ts = parseInt(tsMatch[1], 10);
     if (!isNaN(ts)) {
-      const d = new Date(ts);
-      const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-      primaryDateDir = dateStr;
+      // W-1: formatDateYYYYMMDD を利用
+      primaryDateDir = formatDateYYYYMMDD(new Date(ts));
       // まず逆算した日付ディレクトリを優先確認
-      const priorityPath = path.join(stashDir, dateStr, `${key}.jsonl`);
+      const priorityPath = path.join(stashDir, primaryDateDir, `${key}.jsonl`);
       if (fs.existsSync(priorityPath)) {
         try {
           return JSON.parse(fs.readFileSync(priorityPath, 'utf8').trim()).text || null;
@@ -112,7 +128,8 @@ function stashGet(key, stashConfig) {
     }
   }
 
-  // フォールバック: 逆算に失敗した場合、または優先ディレクトリに存在しない場合は全スキャン
+  // m2: フォールバック: 逆算に失敗した場合、または優先ディレクトリに存在しない場合は全スキャン
+  // 優先パスで見つからなかったので primaryDateDir は再走しない
   let dateDirs;
   try {
     dateDirs = fs.readdirSync(stashDir).filter(d => /^\d{8}$/.test(d) && d !== primaryDateDir);
@@ -147,15 +164,20 @@ function stashList(filter, stashConfig) {
     ? new Date(Date.now() - filter.days * 86400000)
     : null;
 
+  // EFF-m3: cutoffDate がある場合は dateDir 名（YYYYMMDD）で先にフィルタして早期終了
+  // W-1: formatDateYYYYMMDD を利用
+  const cutoffDateStr = cutoffDate ? formatDateYYYYMMDD(cutoffDate) : null;
+
   let dateDirs;
   try {
-    dateDirs = fs.readdirSync(stashDir).sort().reverse();
+    dateDirs = fs.readdirSync(stashDir).filter(d => /^\d{8}$/.test(d)).sort().reverse();
   } catch {
     return [];
   }
 
   for (const dateDir of dateDirs) {
-    if (!/^\d{8}$/.test(dateDir)) continue;
+    // EFF-m3: dateDir 名が cutoff より古ければ以降はすべて古いので早期終了
+    if (cutoffDateStr && dateDir < cutoffDateStr) break;
     const dirPath = path.join(stashDir, dateDir);
     let files;
     try {
@@ -265,16 +287,27 @@ function shouldStash(toolResponse, stashConfig) {
   return true;
 }
 
-// raw 変換（切り詰めなし JSON.stringify）
-// flattenToString と異なり 100KB 切り詰めを行わない
-// @param obj  any
+// M2: 共通 flatten（切り詰め長を opts.maxLength で制御可能）
+// opts.maxLength が未指定の場合は切り詰めなし（flattenRaw と同等）
+// @param obj        any
+// @param opts       { maxLength?: number }
 // @returns string
-function flattenRaw(obj) {
+function flatten(obj, opts) {
   try {
-    return typeof obj === 'string' ? obj : JSON.stringify(obj) || '';
+    const str = typeof obj === 'string' ? obj : JSON.stringify(obj) || '';
+    const max = opts && opts.maxLength;
+    return (max && str.length > max) ? str.slice(0, max) : str;
   } catch {
     return String(obj);
   }
 }
 
-module.exports = { stashWrite, stashGet, stashList, stashPurge, shouldStash, flattenRaw, generateKey };
+// raw 変換（切り詰めなし JSON.stringify）
+// flattenToString と異なり 100KB 切り詰めを行わない
+// @param obj  any
+// @returns string
+function flattenRaw(obj) {
+  return flatten(obj);
+}
+
+module.exports = { stashWrite, stashGet, stashList, stashPurge, shouldStash, flattenRaw, flatten, generateKey, formatDateYYYYMMDD };

@@ -8,7 +8,7 @@ const { loadConfig, getServerConfig, parseServerName, parseToolBaseName, getAllo
 const { runOutboundChecks, CHECKS: OUTBOUND_CHECKS } = require('./checks/outbound');
 const { runInboundChecks, CHECKS: INBOUND_CHECKS } = require('./checks/inbound');
 const { log } = require('./logger');
-const { stashWrite, shouldStash, flattenRaw } = require('./stash');
+const { stashWrite, shouldStash, flattenRaw, flatten } = require('./stash');
 const { maskSensitiveText } = require('./masker');
 
 // RATE-001: Rapid Fire Detection — ツール名ごとの呼び出し履歴（セッション内）
@@ -141,13 +141,9 @@ function determineSeverity(config, findings) {
 
 const MAX_TEXT_LENGTH = 100000; // 100KB上限
 
+// M2: stash.flatten を利用（near-duplicate 統合、既存 export は維持）
 function flattenToString(obj) {
-  try {
-    const str = typeof obj === 'string' ? obj : JSON.stringify(obj) || '';
-    return str.length > MAX_TEXT_LENGTH ? str.slice(0, MAX_TEXT_LENGTH) : str;
-  } catch {
-    return String(obj);
-  }
+  return flatten(obj, { maxLength: MAX_TEXT_LENGTH });
 }
 
 // P5: Rug Pull検出 — ツール定義のSHA-256ハッシュを比較（ディスク永続化）
