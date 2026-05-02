@@ -1,6 +1,6 @@
 {
   "name": "mcp-yoshi",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "MCP communication security filter for Claude Code — ちゃんと見てヨシッ！",
   "main": "src/checker.js",
   "bin": {

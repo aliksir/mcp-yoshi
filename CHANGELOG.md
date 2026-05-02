@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.5.0 (2026-05-02) — Context Stash
+
+巨大 MCP 応答によるコンテキスト圧迫を低減する基盤として、JSONL 形式の stash 機構と機密情報マスカーを追加。Context Mode (mksglu/context-mode, ELv2) の設計を借用しつつ、依存ゼロ規約を維持するため SQLite ではなく JSONL で実装。
+
+### 新機能: context-stash
+
+- 大サイズの MCP ツールレスポンスを `~/.mcp-yoshi/stash/` 配下に JSONL 退避し、Claude Code には `additionalContext` 経由で要約と stash パスを通知
+- 機密情報を含む応答は `maskSensitiveText` で IN-014 (PII) / IN-010 (Credential) パターンを当ててからのみ stash へ書き出し
+- stash ファイルは `chmod 0o600` + `wx` フラグ（既存上書き禁止）で書き出し、purge ポリシー（時間 / 件数 / サイズ閾値）で自動清掃
+
+### 新規ファイル
+
+- `src/stash.js` (280行) — JSONL stash core（書出 / purge / 検索）
+- `src/masker.js` (78行) — IN-014/IN-010 専用マスカー
+
+### 変更
+
+- `src/checker.js` — FIX-D1 として PostToolUse 経路の制御フローを修正（const → let / 即 exit 削除 / `maybeStashAndAnnotate` 統合）
+- `bin/mcp-yoshi.js` — `mcp-yoshi stash` サブコマンド群追加（list / read / purge）
+- `config.default.json` — stash デフォルト設定（threshold / purge policy）追加
+
+### テスト
+
+- 212件全 PASS（v1.4.0: 184件から +28件、T1a〜T1k 11ケース新設）
+- IN-014/IN-010 マスキング、stash 書出 / 復元、purge ポリシー、AC-1〜AC-8 受諾基準を網羅
+
+### 設計借用元
+
+- Context Mode (mksglu/context-mode, ELv2) — JSONL 設計のみ取り込み、コードは移植せず
+
+### 出典
+
+- 起点 X 投稿（小樱 @xiaoying_eth）— Claude Code トークン削減 10 GitHub リポジトリ評価から context-mode を選定
+
 ## v1.4.0 (2026-04-17) — Supply Chain Defense
 
 CVE-2026-40933 (Flowise Authenticated RCE Via MCP Adapters) と同型攻撃クラスへの防御強化、および Flowise 59件アドバイザリ（2026-04-16一斉公開、Anthropic researcher igor-magun-wd 起点の "Anthropic MCP Supply Chain Vulnerability" series）由来の防御パターン群を追加。
