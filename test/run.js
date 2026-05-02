@@ -1092,14 +1092,18 @@ const testStashConfig = {
   const result = checkInbound(hookData, warnConfig);
   // IN-014 が WARN で firing しているはず
   const has014 = result.findings.some(f => f.id === 'IN-014');
+  // FINDING-006: 別 BLOCK ルール誤発火ガード
+  // has014 が true かつ severity が BLOCK の場合、warnConfig で IN-014 を WARN に降格したにも関わらず
+  // BLOCK になるのは別の BLOCK ルールが誤発火している証拠 → fixture を見直すべきテスト失敗
+  assert(has014, 'T1c: IN-014 は warnConfig fixture で必ず発火するべき');
   if (has014 && result.severity !== 'BLOCK') {
     // maskSensitiveText でマスク
     const rawText = flattenRaw(hookData.tool_response);
     const masked = maskSensitiveText(rawText, result.findings);
     assert(!masked.includes(fakeKey), 'T1c: IN-014 WARN fixture — sk-xxx not in masked stash text');
-  } else {
-    // BLOCK になった場合はこのテストパスとして記録（T1d が担当）
-    assert(true, 'T1c: IN-014 fired as BLOCK (T1d covers this case, T1c skip)');
+  } else if (has014 && result.severity === 'BLOCK') {
+    // FINDING-006: IN-014 は WARN に降格済みなのに BLOCK になった = 別 BLOCK ルール誤発火
+    assert(false, 'T1c: 別 BLOCK ルール誤発火 — fixture に意図しない BLOCK トリガーが含まれる。fixture を見直すこと');
   }
 }
 

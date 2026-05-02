@@ -45,6 +45,12 @@ function stashWrite(maskedText, meta, stashConfig) {
   const ts = meta.timestamp || Date.now();
   const dateDir = getDateDir(stashDir, ts);
   fs.mkdirSync(dateDir, { recursive: true });
+  // FINDING-009: ディレクトリを owner-only に制限（Unix: 0o700、Windows は no-op）
+  try {
+    fs.chmodSync(dateDir, 0o700);
+  } catch {
+    // Windows / 非対応 FS では無視（既存ファイル chmod と同じ扱い）
+  }
 
   let key, filePath, attempts = 0;
   do {

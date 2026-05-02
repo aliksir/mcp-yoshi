@@ -162,7 +162,13 @@ switch (command) {
         console.error('Error: mcp-yoshi stash purge --older-than <days>');
         process.exit(1);
       }
-      const result = stashPurge(parseInt(daysStr, 10), config.stash);
+      // FINDING-008: NaN / 不正値チェック（サイレント無視防止）
+      const olderThanDays = parseInt(daysStr, 10);
+      if (isNaN(olderThanDays) || olderThanDays < 1) {
+        console.error('Error: --older-than には正の整数を指定してください');
+        process.exit(1);
+      }
+      const result = stashPurge(olderThanDays, config.stash);
       console.log(`${result.count} 件の stash を削除しました`);
     } else {
       console.error(`Unknown stash subcommand: ${subCmd}`);
