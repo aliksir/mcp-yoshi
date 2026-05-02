@@ -8,6 +8,8 @@ const { loadConfig, getServerConfig, parseServerName, parseToolBaseName, getAllo
 const { runOutboundChecks, CHECKS: OUTBOUND_CHECKS } = require('./checks/outbound');
 const { runInboundChecks, CHECKS: INBOUND_CHECKS } = require('./checks/inbound');
 const { log } = require('./logger');
+const { stashWrite, shouldStash, flattenRaw } = require('./stash');
+const { maskSensitiveText } = require('./masker');
 
 // RATE-001: Rapid Fire Detection — ツール名ごとの呼び出し履歴（セッション内）
 const RATE_WINDOW_MS = 60000;
@@ -329,21 +331,72 @@ async function run(direction) {
     findings: result.findings,
   });
 
-  const output = formatOutput(result, direction);
+  // ⚠️ FIX-D1 変更1: const → let（stash 通知発生時に output を null から昇格させるため）
+  let output = formatOutput(result, direction);
 
-  if (!output) {
-    process.exit(0);
-    return;
+  // ⚠️ FIX-D1 変更2: if (!output) { process.exit(0); return; } ブロックを削除
+  // （stash 判定ブロック後の process.exit で一元管理）
+
+  // ──────────────────────────────────────────────────────────────────
+  // ⚠️ FIX-D1 変更3: context-stash 判定ブロック（process.exit の直前）
+  // inbound 応答を閾値超過時に退避（AC-1, AC-7, AC-10, AC-11）
+  // ──────────────────────────────────────────────────────────────────
+  if (direction === 'inbound') {
+    const stashConfig = config.stash;
+    if (stashConfig && stashConfig.enabled !== false) {
+      // BLOCK 応答は stash しない（AC-7: Claude に渡らないため）
+      // allowlist 早期リターン（SKIPPED）は stash しない（AC-10）
+      const skipStash = (result.severity === 'BLOCK') || (result.skipped === true);
+      if (!skipStash && shouldStash(hookData.tool_response, stashConfig)) {
+        // flattenToString 経由しない（FIX-001: 100KB 切り詰めを避ける）
+        const rawText = flattenRaw(hookData.tool_response);
+        // findings の matched をマスク（不変条件 I4 厳守）
+        const maskedText = maskSensitiveText(rawText, result.findings || []);
+        let stashNotice = '';
+        try {
+          const sr = stashWrite(maskedText, {
+            server: result.server || parseServerName(hookData.tool_name),
+            tool: hookData.tool_name,
+            timestamp: Date.now(),
+          }, stashConfig);
+          const summary = maskedText.slice(0, 200).replace(/\n/g, ' ');
+          stashNotice = `[mcp-yoshi] stashed: key=${sr.key} size=${sr.size}B\n  summary: ${summary}...\n  restore: mcp-yoshi stash get ${sr.key}`;
+        } catch (err) {
+          // フェイルセーフ: 書込失敗でも既存 severity は維持（AC-8）
+          stashNotice = `[mcp-yoshi] stash failed: ${String(err.message || err).slice(0, 100)}`;
+        }
+        // additionalContext に stash 通知を追記
+        if (stashNotice) {
+          if (!output) {
+            // PASS（output=null）の場合: output を新規昇格
+            output = {
+              json: { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: stashNotice } },
+              exitCode: 0,
+            };
+          } else if (output.json && output.json.hookSpecificOutput) {
+            // WARN の場合: 既存 additionalContext に追記
+            const existing = output.json.hookSpecificOutput.additionalContext || '';
+            output.json.hookSpecificOutput.additionalContext = existing
+              ? `${existing}\n${stashNotice}`
+              : stashNotice;
+          }
+        }
+      }
+    }
   }
+  // ──────────────────────────────────────────────────────────────────
 
-  if (output.json) {
+  // 出力 + 終了（stash 判定ブロック後に一元化）
+  // output が null（PASS かつ stash なし）→ exit(0)
+  // output が stash 通知で昇格 → exitCode: 0 で additionalContext 出力
+  if (output && output.json) {
     process.stdout.write(JSON.stringify(output.json));
   }
-  if (output.stderr) {
+  if (output && output.stderr) {
     process.stderr.write(output.stderr);
   }
 
-  process.exit(output.exitCode);
+  process.exit(output ? output.exitCode : 0);
 }
 
 module.exports = { run, checkOutbound, checkInbound, determineSeverity, flattenToString, checkRugPull, toolDefinitionHashes, loadHashes, saveHashes, resetHashState, HASH_FILE_PATH, checkRateLimit, callHistory, RATE_WINDOW_MS, RATE_LIMIT, toolServerMap, checkToolShadowing };

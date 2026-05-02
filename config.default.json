@@ -1,6 +1,13 @@
 {
   "logDir": "~/.mcp-yoshi/logs",
   "logLevel": "info",
+  "stash": {
+    "enabled": true,
+    "threshold": 50000,
+    "dir": "~/.mcp-yoshi/stash",
+    "retention_days": 30,
+    "max_size": 5242880
+  },
   "checks": {
     "outbound": {
       "apiKeys": true,

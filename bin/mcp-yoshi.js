@@ -33,6 +33,9 @@ Usage:
   mcp-yoshi allow <server> --reason "理由"          allowlistにサーバーを追加
   mcp-yoshi allow --list                            allowlist一覧を表示
   mcp-yoshi allow --remove <server>                 allowlistからサーバーを削除
+  mcp-yoshi stash get <key>                          stashから応答を取り出す
+  mcp-yoshi stash list [--days N]                    stash一覧を表示
+  mcp-yoshi stash purge --older-than <N>             N日超のstashを削除
   mcp-yoshi update [--check]                         アップデート確認・実行
   mcp-yoshi --version                                バージョン表示
   mcp-yoshi --help                                   このヘルプ
@@ -123,6 +126,48 @@ switch (command) {
       const reason = parseFlag('--reason') || '';
       const entry = addToAllowlist(server, reason);
       console.log(`${server} をallowlistに追加しました（理由: ${entry.reason || 'なし'}）`);
+    }
+    break;
+  }
+  case 'stash': {
+    const subCmd = args[1];
+    const { stashGet, stashList, stashPurge } = require('../src/stash');
+    const config = loadConfig();
+    if (subCmd === 'get') {
+      const key = args[2];
+      if (!key) {
+        console.error('Error: mcp-yoshi stash get <key>');
+        process.exit(1);
+      }
+      const text = stashGet(key, config.stash);
+      if (text === null) {
+        console.log('stash not found:', key);
+        process.exit(1);
+      }
+      process.stdout.write(text);
+    } else if (subCmd === 'list') {
+      const daysStr = parseFlag('--days');
+      const days = daysStr ? parseInt(daysStr, 10) : null;
+      const entries = stashList(days ? { days } : {}, config.stash);
+      if (entries.length === 0) {
+        console.log('stashは空です');
+        break;
+      }
+      for (const e of entries) {
+        console.log(`${e.date}  ${e.key}  ${e.size}B  (${e.server}/${e.tool})`);
+      }
+    } else if (subCmd === 'purge') {
+      const daysStr = parseFlag('--older-than');
+      if (!daysStr) {
+        console.error('Error: mcp-yoshi stash purge --older-than <days>');
+        process.exit(1);
+      }
+      const result = stashPurge(parseInt(daysStr, 10), config.stash);
+      console.log(`${result.count} 件の stash を削除しました`);
+    } else {
+      console.error(`Unknown stash subcommand: ${subCmd}`);
+      showHelp();
+      process.exit(1);
     }
     break;
   }
