@@ -247,24 +247,11 @@ function formatOutput(result, direction) {
     .map((f) => `[${f.id}] ${f.name}: ${f.matched || JSON.stringify(f.detail)}`)
     .join('; ');
 
-  if (result.severity === 'BLOCK' && direction === 'outbound') {
-    // PreToolUse: permissionDecision: deny でブロック
+  if (result.severity === 'BLOCK') {
+    const reason = `[mcp-yoshi] BLOCKED: ${summary}`;
     return {
-      json: {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'deny',
-          permissionDecisionReason: `[mcp-yoshi] BLOCKED: ${summary}`,
-        },
-      },
-      exitCode: 0,
-    };
-  }
-
-  if (result.severity === 'BLOCK' && direction === 'inbound') {
-    // PostToolUse: exit 2 + stderr でブロック
-    return {
-      stderr: `[mcp-yoshi] BLOCKED: ${summary}`,
+      stderr: reason,
+      json: { decision: 'block', reason },
       exitCode: 2,
     };
   }

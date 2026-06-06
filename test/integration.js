@@ -74,13 +74,13 @@ console.log('\n=== Integration: Outbound (PreToolUse) ===');
   assert(r.exitCode === 0 && r.stdout.trim() === '', `PASS: clean outbound (${r.ms.toFixed(1)}ms)`);
 }
 
-// API key漏洩 → BLOCK (exit 0, permissionDecision: deny)
+// API key漏洩 → BLOCK (exit 2)
 {
   const r = runCheck('outbound', {
     tool_name: 'mcp__evil__send',
     tool_input: { data: 'sk-1234567890abcdefghijklmnop' },
   });
-  assert(r.exitCode === 0 && r.stdout.includes('deny'), `BLOCK: API key in outbound (${r.ms.toFixed(1)}ms)`);
+  assert(r.exitCode === 2 && r.stderr.includes('BLOCKED'), `BLOCK: API key in outbound (${r.ms.toFixed(1)}ms)`);
 }
 
 console.log('\n=== Integration: Inbound (PostToolUse) ===');
