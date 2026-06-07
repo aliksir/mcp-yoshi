@@ -1,169 +1,170 @@
+> Japanese version: [README.ja.md](README.ja.md)
+
 # mcp-yoshi
 
-> MCPの通信、ちゃんと見てヨシッ！
+A real-time security filter for MCP (Model Context Protocol) tool communication. Runs as a Claude Code hook, inspecting data sent to and received from MCP tools to assess safety.
 
-**[日本語版 README](README.ja.md)**
+## Why
 
-MCP (Model Context Protocol) ツール通信のリアルタイムセキュリティフィルター。
-Claude Code の hook として動作し、MCPツールの送受信データを検査して安全性を判定します。
+- 97% of MCP tool descriptions are inadequate, and 13% are inconsistent with the actual implementation ([research paper](https://arxiv.org/abs/2602.14878))
+- Existing tools (mcp-scan, mcp-drift-detector) only provide static or pre-run checks
+- **No real-time communication filter existed**
 
-## なぜ必要か
+mcp-yoshi inspects data at the moment of communication and immediately blocks or warns when issues are detected.
 
-- MCPツールの説明文は97%が不十分、13%が実装と不一致（[研究論文](https://arxiv.org/abs/2602.14878)）
-- 既存ツール（mcp-scan, mcp-drift-detector）は静的チェック・事前検査のみ
-- **リアルタイムの通信フィルター**が存在しなかった
+## Features
 
-mcp-yoshi は通信の瞬間にデータを検査し、問題があれば即座にブロックまたは警告します。
+### Outbound Checks (data sent to MCP servers)
 
-## 機能
+| ID | Check | Detection Target |
+|----|-------|-----------------|
+| OUT-001 | API Key Pattern | API keys for AWS, OpenAI, GitHub, Slack, Google, Stripe, etc. |
+| OUT-002 | Private Key | RSA/EC/DSA/OPENSSH private keys |
+| OUT-003 | High Entropy String | Random strings of 32+ characters |
+| OUT-004 | Env Value Pattern | Environment variable values for PASSWORD, SECRET, TOKEN, etc. |
+| OUT-005 | PII Pattern | Email addresses, phone numbers, credit card numbers |
+| OUT-006 | Large Payload | Request payloads exceeding 50KB (bulk data exfiltration) |
+| OUT-007 | Path Traversal | Sensitive paths such as /etc/passwd, ~/.ssh/, C:\Windows\ |
 
-### アウトバウンドチェック（送信データ → MCPサーバー）
+### Inbound Checks (data received from MCP servers)
 
-| ID | チェック | 検出対象 |
-|----|---------|---------|
-| OUT-001 | API Key Pattern | AWS, OpenAI, GitHub, Slack, Google, Stripe 等のAPIキー |
-| OUT-002 | Private Key | RSA/EC/DSA/OPENSSH秘密鍵 |
-| OUT-003 | High Entropy String | 32文字以上の高ランダム文字列 |
-| OUT-004 | Env Value Pattern | PASSWORD, SECRET, TOKEN 等の環境変数値 |
-| OUT-005 | PII Pattern | メールアドレス、電話番号、クレジットカード番号 |
-| OUT-006 | Large Payload | リクエストペイロードが50KB超（大量データ送信） |
-| OUT-007 | Path Traversal | /etc/passwd, ~/.ssh/, C:\Windows\ 等のセンシティブパス |
+| ID | Check | Detection Target |
+|----|-------|-----------------|
+| IN-001 | Prompt Injection | Instruction overrides like "ignore previous instructions" |
+| IN-002 | Shell Command Embedding | Command injection via `$(...)`, `; rm`, `\| bash`, etc. |
+| IN-003 | Suspicious URL / SSRF | javascript: URIs, URL shorteners, internal networks, cloud metadata (169.254.169.254, etc.) |
+| IN-004 | Script Injection | `<script>`, `eval()`, `document.cookie`, etc. |
+| IN-005 | Tool Definition Tampering | Hidden instructions embedded in tool descriptions (12 patterns) |
+| IN-006 | ASCII Smuggling | Invisible Unicode characters (U+E0000 Tags Block, Zero-Width characters) |
+| IN-007 | Base64 Encoded Payload | Re-inspects decoded Base64 content against existing patterns |
+| IN-008 | Response Size Limit | Responses exceeding 512KB (context window poisoning prevention) |
+| IN-009 | Hidden Fields | Undeclared fields such as `_hidden`, `$meta` |
+| IN-010 | Elicitation Abuse | BLOCKs credential requests and command execution prompts |
+| IN-011 | Sampling Injection | Embedded LLM tokenizer markers (`[INST]`, `<<SYS>>`, `<\|im_start\|>`, etc.) |
+| IN-012 | Log-To-Leak | Data exfiltration instructions ("send this data to...", "call the logging tool", etc.) |
+| IN-013 | Conversation Marker | Conversation markers (`Human:`, `Assistant:`) injected at the beginning of lines |
+| IN-014 | Credentials in Response | Residual credentials in stdout/stderr (AWS/OpenAI/GitHub keys, Bearer Tokens, private keys) |
+| IN-015 | Parameter Override | `overrideConfig` key co-occurring with `mcpServerConfig`/`NODE_OPTIONS`/`executablePath` for Allowlist Bypass attacks (CVE-2026-40933 related) |
+| IN-017 | Path Traversal | `../` directory traversal + sensitive path references in `basePath`/`filePath`/`filename` (`/etc/`, `/root/`, `C:\Windows\`, `/proc/`) |
+| IN-018 | Query Injection | SQL/Cypher/NoSQL injection -- BLOCK: `UNION SELECT`, `DROP TABLE`, `MATCH...DELETE`, `;--` / WARN: `' OR '`, `sleep()` |
+| IN-019 | Sandbox Escape | vm/Function/global access (`globalThis.process.mainModule.require`, `constructor.constructor()` vm2 escape, etc.) |
+| IN-020 | Header Spoofing | Trust boundary bypass (`x-request-from: internal`, `x-forwarded-for: 127.0.0.1`, etc.) |
+| IN-021 | Browser Launch RCE | Puppeteer/Playwright `executablePath` pointing to shell binaries (`/bin/sh`, `/usr/bin/nc`, etc.) |
 
-### インバウンドチェック（MCPサーバー → 受信データ）
+### Rate Limiting (communication patterns)
 
-| ID | チェック | 検出対象 |
-|----|---------|---------|
-| IN-001 | Prompt Injection | "ignore previous instructions" 等の指示上書き |
-| IN-002 | Shell Command Embedding | `$(...)`, `; rm`, `\| bash` 等のコマンド注入 |
-| IN-003 | Suspicious URL / SSRF | javascript:, 短縮URL, 内部ネットワーク, クラウドメタデータ(169.254.169.254等) |
-| IN-004 | Script Injection | `<script>`, `eval()`, `document.cookie` 等 |
-| IN-005 | Tool Definition Tampering | ツール説明文に埋め込まれた隠し指示（12パターン） |
-| IN-006 | ASCII Smuggling | 不可視Unicode文字（U+E0000台Tags Block, Zero-Width文字） |
-| IN-007 | Base64 Encoded Payload | Base64デコード後に既存パターンで再検出 |
-| IN-008 | Response Size Limit | レスポンスが512KB超（コンテキストウィンドウ毒盛対策） |
-| IN-009 | Hidden Fields | `_hidden`, `$meta` 等の未宣言フィールド |
-| IN-010 | Elicitation Abuse | 認証情報要求・コマンド実行誘導をBLOCK |
-| IN-011 | Sampling Injection | LLMトークナイザマーカー（`[INST]`, `<<SYS>>`, `<\|im_start\|>` 等）の埋め込み |
-| IN-012 | Log-To-Leak | データ窃取指示（「send this data to...」「call the logging tool」等） |
-| IN-013 | Conversation Marker | 会話マーカー（`Human:`, `Assistant:`）の行頭埋め込み |
-| IN-014 | Credentials in Response | stdout/stderr内の認証情報残留検出（AWS/OpenAI/GitHub等のキー、Bearer Token、秘密鍵） |
-| IN-015 | Parameter Override | `overrideConfig` キー + `mcpServerConfig`/`NODE_OPTIONS`/`executablePath` 同居の Allowlist Bypass 攻撃 (CVE-2026-40933 関連) |
-| IN-017 | Path Traversal | `../` ディレクトリ移動 + `basePath`/`filePath`/`filename` への機密パス指定（`/etc/`, `/root/`, `C:\Windows\`, `/proc/`） |
-| IN-018 | Query Injection | SQL/Cypher/NoSQL injection — BLOCK: `UNION SELECT`, `DROP TABLE`, `MATCH...DELETE`, `;--` / WARN: `' OR '`, `sleep()` |
-| IN-019 | Sandbox Escape | vm/Function/global access（`globalThis.process.mainModule.require`, `constructor.constructor()` vm2 escape 等） |
-| IN-020 | Header Spoofing | 信頼境界バイパス（`x-request-from: internal`, `x-forwarded-for: 127.0.0.1` 等） |
-| IN-021 | Browser Launch RCE | Puppeteer/Playwright `executablePath` にシェルバイナリ指定（`/bin/sh`, `/usr/bin/nc` 等） |
+| ID | Check | Detection Target |
+|----|-------|-----------------|
+| RATE-001 | Rapid Fire Detection | WARNs when the same tool is called 10+ times within 60 seconds |
 
-### レート制限（通信パターン）
+### Rug Pull Detection (tool definition tampering)
 
-| ID | チェック | 検出対象 |
-|----|---------|---------|
-| RATE-001 | Rapid Fire Detection | 同一ツールが60秒以内に10回以上呼び出された場合にWARN |
+| ID | Check | Detection Target |
+|----|-------|-----------------|
+| RUG-001 | Tool Definition Changed | Detects SHA-256 hash changes in tool definitions |
+| SHADOW-001 | Tool Shadowing | Detects same-name tool registrations from different servers |
 
-### Rug Pull検出（ツール定義の改竄検知）
+On the first call, tool definition hashes are recorded. Subsequent calls that detect changes will trigger a WARN. Hashes are persisted in `~/.mcp-yoshi/tool-hashes.json`, enabling cross-session detection.
 
-| ID | チェック | 検出対象 |
-|----|---------|---------|
-| RUG-001 | Tool Definition Changed | ツール定義のSHA-256ハッシュ変更を検知 |
-| SHADOW-001 | Tool Shadowing | 異なるサーバーからの同名ツール登録を検知 |
+### NFKC Normalization (anti-obfuscation)
 
-初回呼び出し時にツール定義のハッシュを記録し、以降の呼び出しで変更があればWARNを発生させます。ハッシュは `~/.mcp-yoshi/tool-hashes.json` に永続化されるため、セッションを跨いだ検出が可能です。
+[NFKC normalization](https://unicode.org/reports/tr15/) is applied before all inbound/outbound checks. This transparently detects obfuscation via fullwidth characters (e.g., `ignore` encoded as fullwidth) and Unicode compatibility characters.
 
-### NFKC正規化（難読化対策）
+### Three-Level Verdicts
 
-全てのインバウンド/アウトバウンドチェックの前段で[NFKC正規化](https://unicode.org/reports/tr15/)を適用します。全角文字（ｉｇｎｏｒｅ → ignore）やUnicode互換文字による難読化を透過的に検出します。
+| Verdict | Behavior |
+|---------|----------|
+| **PASS** | No issues found. Execution proceeds normally |
+| **WARN** | Warning is added to Claude's context. Execution continues |
+| **BLOCK** | Tool execution is blocked (outbound) / warning is displayed (inbound) |
 
-### 3段階判定
+## Requirements
 
-| 判定 | 動作 |
-|------|------|
-| **PASS** | 問題なし。そのまま実行 |
-| **WARN** | 警告をClaudeのコンテキストに追加。実行は継続 |
-| **BLOCK** | ツール実行を阻止（送信時）/ 警告表示（受信時） |
+- Node.js 18+
 
-## インストール
+## Installation
 
 ```bash
 npm install -g mcp-yoshi
 ```
 
-## セットアップ
+## Setup
 
 ```bash
-# Claude Code の settings.json に hook 設定を自動追加
+# Automatically add hook configuration to Claude Code's settings.json
 mcp-yoshi init
 
-# プロジェクト単位で設定する場合
+# For project-level configuration
 mcp-yoshi init --project
 ```
 
-これにより、以下の hook が自動設定されます：
+This automatically configures the following hooks:
 
-- `PreToolUse`: `mcp__.*` にマッチ → アウトバウンドチェック
-- `PostToolUse`: `mcp__.*` にマッチ → インバウンドチェック
+- `PreToolUse`: matches `mcp__.*` -> outbound checks
+- `PostToolUse`: matches `mcp__.*` -> inbound checks
 
-## 使い方
+## Usage
 
-セットアップ後は自動的に動作します。MCPツールが呼ばれるたびにチェックが実行されます。
+After setup, mcp-yoshi operates automatically. Checks run every time an MCP tool is invoked.
 
-### ログ確認
+### Viewing Logs
 
 ```bash
-# 直近20件のログを表示
+# Show the last 20 log entries
 mcp-yoshi logs
 
-# 直近50件のWARN以上のみ表示
+# Show the last 50 entries at WARN level or above
 mcp-yoshi logs --tail 50 --level warn
 
-# BLOCK のみ表示
+# Show BLOCK entries only
 mcp-yoshi logs --level block
 ```
 
-### 統計レポート
+### Statistics Report
 
 ```bash
-# 過去7日間の検出統計を表示
+# Show detection statistics for the past 7 days
 mcp-yoshi stats
 
-# 過去30日間
+# Past 30 days
 mcp-yoshi stats --days 30
 ```
 
-### 設定確認
+### View Configuration
 
 ```bash
 mcp-yoshi config
 ```
 
-## Allowlist（信頼済みサーバー）
+## Allowlist (Trusted Servers)
 
-特定のMCPサーバーを信頼済みとして登録し、チェックをスキップできます。
-**ユーザー責任**での運用となりますが、ログ記録は継続されます（severity: SKIPPED）。
+You can register specific MCP servers as trusted to skip checks.
+This operates under **your own responsibility**, but logging continues (severity: SKIPPED).
 
 ```bash
-# サーバーを allowlist に追加（理由必須推奨）
-mcp-yoshi allow memory --reason "社内ナレッジグラフ、信頼済み"
+# Add a server to the allowlist (reason recommended)
+mcp-yoshi allow memory --reason "Internal knowledge graph, trusted"
 
-# allowlist 一覧
+# List the allowlist
 mcp-yoshi allow --list
 
-# allowlist から削除
+# Remove from the allowlist
 mcp-yoshi allow --remove memory
 ```
 
-`~/.mcp-yoshi/config.json` で直接設定することもできます：
+You can also configure it directly in `~/.mcp-yoshi/config.json`:
 
 ```json
 {
   "allowlist": [
-    { "server": "memory", "reason": "社内ナレッジグラフ", "addedAt": "2026-03-12T00:00:00.000Z" }
+    { "server": "memory", "reason": "Internal knowledge graph", "addedAt": "2026-03-12T00:00:00.000Z" }
   ]
 }
 ```
 
-## 設定カスタマイズ
+## Configuration
 
-`~/.mcp-yoshi/config.json` を作成して設定を上書きできます。
+Create `~/.mcp-yoshi/config.json` to override default settings.
 
 ```json
 {
@@ -185,9 +186,9 @@ mcp-yoshi allow --remove memory
 }
 ```
 
-### MCPサーバー別の設定
+### Per-Server Configuration
 
-`servers` セクションでMCPサーバーごとにフィルターのON/OFFとチェック項目を制御できます。
+Use the `servers` section to control filter on/off and check items per MCP server.
 
 ```json
 {
@@ -205,61 +206,61 @@ mcp-yoshi allow --remove memory
 }
 ```
 
-| キー | 説明 |
-|------|------|
-| `"*"` | デフォルト設定（未定義のサーバーに適用） |
-| `"<server名>"` | `mcp__<server名>__*` のツールに適用 |
+| Key | Description |
+|-----|-------------|
+| `"*"` | Default settings (applied to undefined servers) |
+| `"<server-name>"` | Applied to tools matching `mcp__<server-name>__*` |
 
-- `enabled: false` → そのサーバーのチェックを完全スキップ
-- `checks` → グローバル設定をサーバー単位でオーバーライド
+- `enabled: false` -> completely skips checks for that server
+- `checks` -> overrides global settings on a per-server basis
 
-### 設定項目
+### Configuration Reference
 
-| 項目 | デフォルト | 説明 |
-|------|-----------|------|
-| `logDir` | `~/.mcp-yoshi/logs` | ログ出力先 |
-| `logLevel` | `info` | `info`: 全記録, `warn`: WARN以上, `none`: 記録なし |
-| `checks.outbound.*` | `true` | 各アウトバウンドチェックの有効/無効 |
-| `checks.inbound.*` | `true` | 各インバウンドチェックの有効/無効 |
-| `servers` | `{"*": {"enabled": true}}` | サーバー別ON/OFF |
-| `severity.WARN` | `["highEntropy", "pii", "suspiciousUrls", ...]` | WARN判定するチェックID |
-| `severity.BLOCK` | `["apiKeys", "privateKeys", "promptInjection", ...]` | BLOCK判定するチェックID |
+| Option | Default | Description |
+|--------|---------|-------------|
+| `logDir` | `~/.mcp-yoshi/logs` | Log output directory |
+| `logLevel` | `info` | `info`: log everything, `warn`: WARN and above, `none`: no logging |
+| `checks.outbound.*` | `true` | Enable/disable individual outbound checks |
+| `checks.inbound.*` | `true` | Enable/disable individual inbound checks |
+| `servers` | `{"*": {"enabled": true}}` | Per-server on/off |
+| `severity.WARN` | `["highEntropy", "pii", "suspiciousUrls", ...]` | Check IDs classified as WARN |
+| `severity.BLOCK` | `["apiKeys", "privateKeys", "promptInjection", ...]` | Check IDs classified as BLOCK |
 
-## アンインストール
+## Uninstall
 
 ```bash
-# hook 設定を削除
+# Remove hook configuration
 mcp-yoshi uninstall
 
-# パッケージ削除
+# Remove the package
 npm uninstall -g mcp-yoshi
 ```
 
-## 既存ツールとの違い
+## Comparison with Existing Tools
 
-| ツール | タイミング | 対象 |
-|--------|----------|------|
-| [mcp-scan](https://github.com/invariantlabs-ai/mcp-scan) | 事前（静的チェック） | ツール定義の安全性 |
-| [mcp-drift-detector](https://github.com/AshishKumar-ops/mcp-drift-detector) | 定期（変更検出） | ツール定義の改竄 |
-| **mcp-yoshi** | **リアルタイム（通信時）** | **送受信データの安全性** |
+| Tool | Timing | Scope |
+|------|--------|-------|
+| [mcp-scan](https://github.com/invariantlabs-ai/mcp-scan) | Pre-run (static check) | Tool definition safety |
+| [mcp-drift-detector](https://github.com/AshishKumar-ops/mcp-drift-detector) | Periodic (change detection) | Tool definition tampering |
+| **mcp-yoshi** | **Real-time (during communication)** | **Safety of transmitted/received data** |
 
-## セキュリティ推奨事項
+## Security Recommendations
 
-### 外部リポジトリの `.mcp.json` について
+### Regarding `.mcp.json` in External Repositories
 
-外部リポジトリをクローンした際、そのリポジトリの `.mcp.json` に定義されたMCPサーバーは**低信頼**として扱うことを推奨します。悪意ある `.mcp.json` によりツールが自動登録される攻撃が報告されています。
+When cloning external repositories, MCP servers defined in their `.mcp.json` should be treated as **untrusted**. Attacks via malicious `.mcp.json` files that auto-register tools have been reported.
 
-- 外部リポの `.mcp.json` 由来のサーバーは **allowlist に追加しない**
-- mcp-yoshi のチェックが有効な状態で利用する
-- 不審なツール呼び出しがないかログを確認する
+- Do **not** add servers originating from external `.mcp.json` to the allowlist
+- Use them with mcp-yoshi checks enabled
+- Review logs for suspicious tool invocations
 
-## 注意事項
+## Notes
 
-- **パフォーマンス**: 全てのMCPツール呼び出しでhookが実行されるため、MCP操作に若干の遅延（数十ms程度）が発生します。気になる場合は `logLevel: "warn"` に変更するか、信頼済みサーバーを `enabled: false` に設定してください
-- **誤検出（False Positive）**: 高エントロピー文字列やPIIパターンは正規のデータにもマッチすることがあります。頻繁に誤検出する場合は該当チェックを無効にするか、severity設定でWARNに下げてください
-- **検出限界**: 正規表現ベースのパターンマッチとNFKC正規化による検出です。高度に難読化された攻撃や未知のパターンは検出できない場合があります。他のセキュリティツール（mcp-scan等）との併用を推奨します
-- **Rug Pull検出**: ツール定義ハッシュは `~/.mcp-yoshi/tool-hashes.json` に永続化されます。ファイルが破損した場合は自動的に空の状態から再開します
+- **Performance**: Hooks run on every MCP tool call, adding slight latency (around tens of milliseconds). If this is a concern, change `logLevel` to `"warn"` or set trusted servers to `enabled: false`
+- **False Positives**: High entropy strings and PII patterns may match legitimate data. If false positives are frequent, disable the relevant check or downgrade its severity to WARN
+- **Detection Limits**: Detection is based on regex pattern matching with NFKC normalization. Highly obfuscated attacks or unknown patterns may not be caught. We recommend using mcp-yoshi alongside other security tools (such as mcp-scan)
+- **Rug Pull Detection**: Tool definition hashes are persisted in `~/.mcp-yoshi/tool-hashes.json`. If the file is corrupted, it automatically restarts from an empty state
 
-## ライセンス
+## License
 
 MIT
