@@ -31,8 +31,11 @@ Usage:
   mcp-yoshi logs [--tail N] [--level warn|block]     ログを表示
   mcp-yoshi stats [--days N]                         検出統計を表示（デフォルト7日）
   mcp-yoshi allow <server> --reason "理由"          allowlistにサーバーを追加
+  mcp-yoshi allow <server> --once --reason "理由"   今回だけ許可（次回は再ブロック）
+  mcp-yoshi allow <server> --expires 2027-01-01     期限付き許可
   mcp-yoshi allow --list                            allowlist一覧を表示
   mcp-yoshi allow --remove <server>                 allowlistからサーバーを削除
+  mcp-yoshi export --format jsonl [--days N]        SIEM形式でブロックイベントを出力
   mcp-yoshi stash get <key>                          stashから応答を取り出す
   mcp-yoshi stash list [--days N]                    stash一覧を表示
   mcp-yoshi stash purge --older-than <N>             N日超のstashを削除
@@ -102,7 +105,11 @@ switch (command) {
         console.log('allowlistは空です');
       } else {
         for (const entry of list) {
-          console.log(`  ${entry.server} — ${entry.reason || '(理由なし)'} (${entry.addedAt || ''})`);
+          const flags = [];
+          if (entry.allowOnce) flags.push('once');
+          if (entry.expires) flags.push(`expires:${entry.expires}`);
+          const flagStr = flags.length > 0 ? ` [${flags.join(', ')}]` : '';
+          console.log(`  ${entry.server} — ${entry.reason || '(理由なし)'}${flagStr} (${entry.addedAt || ''})`);
         }
       }
     } else if (hasFlag('--remove')) {
@@ -124,8 +131,11 @@ switch (command) {
         process.exit(1);
       }
       const reason = parseFlag('--reason') || '';
-      const entry = addToAllowlist(server, reason);
-      console.log(`${server} をallowlistに追加しました（理由: ${entry.reason || 'なし'}）`);
+      const expires = parseFlag('--expires') || null;
+      const allowOnce = hasFlag('--once');
+      const entry = addToAllowlist(server, reason, { expires, allowOnce });
+      const suffix = allowOnce ? '（今回のみ）' : expires ? `（期限: ${expires}）` : '';
+      console.log(`${server} をallowlistに追加しました${suffix}（理由: ${entry.reason || 'なし'}）`);
     }
     break;
   }
@@ -215,6 +225,42 @@ switch (command) {
     const days = parseInt(parseFlag('--days') || '7', 10) || 7;
     const stats = collectStats(config, { days });
     console.log(formatStats(stats));
+    break;
+  }
+  case 'export': {
+    const config = loadConfig();
+    const format = parseFlag('--format') || 'jsonl';
+    if (!['jsonl', 'cef', 'ecs'].includes(format)) {
+      console.error('Error: --format は jsonl, cef, ecs のいずれかを指定してください');
+      process.exit(1);
+    }
+    const days = parseInt(parseFlag('--days') || '7', 10) || 7;
+    const entries = readLogs(config, { tail: 10000, level: 'block' });
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+    const filtered = entries.filter(e => e.timestamp >= cutoff);
+
+    for (const e of filtered) {
+      if (format === 'jsonl') {
+        console.log(JSON.stringify({
+          timestamp: e.timestamp, severity: e.severity, direction: e.direction,
+          tool: e.tool, server: e.server,
+          findings: (e.findings || []).map(f => ({ id: f.id, name: f.name })),
+        }));
+      } else if (format === 'cef') {
+        const findingIds = (e.findings || []).map(f => f.id).join(',');
+        console.log(`CEF:0|mcp-yoshi|mcp-yoshi|1.0|${findingIds}|${e.severity}|8|src=${e.server} act=${e.direction} msg=${e.tool}`);
+      } else if (format === 'ecs') {
+        console.log(JSON.stringify({
+          '@timestamp': e.timestamp, 'event.kind': 'alert', 'event.category': ['intrusion_detection'],
+          'event.outcome': e.severity === 'BLOCK' ? 'failure' : 'success',
+          'rule.name': (e.findings || []).map(f => f.id).join(','),
+          'source.address': e.server, 'event.action': e.direction,
+        }));
+      }
+    }
+
+    if (filtered.length === 0) console.error(`直近${days}日のBLOCKイベントはありません`);
+    else console.error(`${filtered.length}件のBLOCKイベントを${format}形式で出力しました`);
     break;
   }
   case 'config':

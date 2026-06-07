@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { loadConfig, getServerConfig, parseServerName, parseToolBaseName, getAllowlistEntry } = require('./config');
+const { loadConfig, getServerConfig, parseServerName, parseToolBaseName, getAllowlistEntry, loadProjectConfig, mergeProjectConfig } = require('./config');
 const { runOutboundChecks, CHECKS: OUTBOUND_CHECKS } = require('./checks/outbound');
 const { runInboundChecks, CHECKS: INBOUND_CHECKS } = require('./checks/inbound');
 const { log } = require('./logger');
@@ -268,8 +268,25 @@ function formatOutput(result, direction) {
   };
 }
 
+function writeNekoHqStats(severity, direction, serverName, findingsCount) {
+  try {
+    const nekoHqDir = path.join(os.homedir(), '.neko-hq');
+    fs.mkdirSync(nekoHqDir, { recursive: true });
+    const entry = JSON.stringify({
+      tool: 'mcp-yoshi',
+      command: direction,
+      ts: new Date().toISOString(),
+      severity: severity.toLowerCase(),
+      summary: { server: serverName, findings: findingsCount, blocked: severity === 'BLOCK' ? 1 : 0 },
+    });
+    fs.appendFileSync(path.join(nekoHqDir, 'stats.jsonl'), entry + '\n', 'utf8');
+  } catch { /* exit handler must not throw */ }
+}
+
 async function run(direction) {
-  const config = loadConfig();
+  let config = loadConfig();
+  const projectConfig = loadProjectConfig();
+  if (projectConfig) config = mergeProjectConfig(config, projectConfig);
   const chunks = [];
 
   for await (const chunk of process.stdin) {
@@ -369,9 +386,11 @@ async function run(direction) {
   }
   // ──────────────────────────────────────────────────────────────────
 
-  // 出力 + 終了（stash 判定ブロック後に一元化）
-  // output が null（PASS かつ stash なし）→ exit(0)
-  // output が stash 通知で昇格 → exitCode: 0 で additionalContext 出力
+  // neko-hq stats 書き込み（BLOCK/WARN のみ）
+  if (result.severity === 'BLOCK' || result.severity === 'WARN') {
+    writeNekoHqStats(result.severity, direction, result.server, result.findings.length);
+  }
+
   if (output && output.json) {
     process.stdout.write(JSON.stringify(output.json));
   }

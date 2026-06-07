@@ -78,26 +78,48 @@ function resolveLogDir(config) {
 }
 
 function isAllowlisted(config, serverName) {
-  const list = config.allowlist || [];
-  return list.some((entry) => entry.server === serverName);
+  const entry = getAllowlistEntry(config, serverName);
+  return entry !== null;
 }
 
 function getAllowlistEntry(config, serverName) {
   const list = config.allowlist || [];
-  return list.find((entry) => entry.server === serverName) || null;
+  const entry = list.find((e) => e.server === serverName);
+  if (!entry) return null;
+
+  if (entry.expires) {
+    const today = new Date().toISOString().slice(0, 10);
+    if (entry.expires < today) {
+      removeFromAllowlist(serverName);
+      return null;
+    }
+  }
+
+  if (entry.allowOnce) {
+    removeFromAllowlist(serverName);
+    return entry;
+  }
+
+  return entry;
 }
 
 function listAllowlist(config) {
   return config.allowlist || [];
 }
 
-function addToAllowlist(serverName, reason) {
+function addToAllowlist(serverName, reason, options = {}) {
   const userConfig = loadUserConfig();
   if (!userConfig.allowlist) userConfig.allowlist = [];
 
-  // 既存エントリがあれば更新
   const idx = userConfig.allowlist.findIndex((e) => e.server === serverName);
-  const entry = { server: serverName, reason: reason || '', addedAt: new Date().toISOString() };
+  const entry = {
+    server: serverName,
+    reason: reason || '',
+    addedAt: new Date().toISOString(),
+  };
+  if (options.expires) entry.expires = options.expires;
+  if (options.allowOnce) entry.allowOnce = true;
+
   if (idx >= 0) {
     userConfig.allowlist[idx] = entry;
   } else {
@@ -106,6 +128,30 @@ function addToAllowlist(serverName, reason) {
 
   saveUserConfig(userConfig);
   return entry;
+}
+
+function loadProjectConfig(dir) {
+  const configPath = path.join(dir || process.cwd(), '.mcp-yoshi.json');
+  try {
+    return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function mergeProjectConfig(config, projectConfig) {
+  if (!projectConfig) return config;
+
+  if (projectConfig.severity) {
+    const merged = { ...config };
+    merged.severity = {
+      BLOCK: projectConfig.severity.BLOCK || config.severity.BLOCK || [],
+      WARN: projectConfig.severity.WARN || config.severity.WARN || [],
+    };
+    return merged;
+  }
+
+  return config;
 }
 
 function removeFromAllowlist(serverName) {
@@ -137,5 +183,6 @@ function saveUserConfig(userConfig) {
 module.exports = {
   loadConfig, getServerConfig, parseServerName, parseToolBaseName, resolveLogDir, deepMerge,
   isAllowlisted, getAllowlistEntry, listAllowlist, addToAllowlist, removeFromAllowlist,
+  loadProjectConfig, mergeProjectConfig,
   USER_CONFIG_PATH,
 };

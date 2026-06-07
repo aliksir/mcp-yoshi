@@ -148,6 +148,12 @@ mcp-yoshi config
 # サーバーを allowlist に追加（理由必須推奨）
 mcp-yoshi allow memory --reason "Internal knowledge graph, trusted"
 
+# 期限付き許可
+mcp-yoshi allow memory --reason "一時的な例外" --expires 2027-01-01
+
+# 今回のみ許可（次回は再ブロック）
+mcp-yoshi allow memory --once --reason "マイグレーション用"
+
 # allowlist 一覧
 mcp-yoshi allow --list
 
@@ -160,8 +166,30 @@ mcp-yoshi allow --remove memory
 ```json
 {
   "allowlist": [
-    { "server": "memory", "reason": "Internal knowledge graph", "addedAt": "2026-03-12T00:00:00.000Z" }
+    { "server": "memory", "reason": "Internal knowledge graph", "addedAt": "2026-03-12T00:00:00.000Z" },
+    { "server": "temp-srv", "reason": "一時的", "expires": "2026-12-31", "allowOnce": true }
   ]
+}
+```
+
+### SIEM エクスポート
+
+```bash
+mcp-yoshi export --format jsonl --days 30   # JSONL (Splunk, Datadog)
+mcp-yoshi export --format cef               # CEF (ArcSight, QRadar)
+mcp-yoshi export --format ecs               # ECS (Elastic)
+```
+
+### プロジェクト別 severity オーバーライド
+
+プロジェクトルートに `.mcp-yoshi.json` を配置:
+
+```json
+{
+  "severity": {
+    "BLOCK": ["apiKeys", "privateKeys"],
+    "WARN": ["highEntropy"]
+  }
 }
 ```
 

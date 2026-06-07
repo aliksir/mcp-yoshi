@@ -145,6 +145,12 @@ This operates under **your own responsibility**, but logging continues (severity
 # Add a server to the allowlist (reason recommended)
 mcp-yoshi allow memory --reason "Internal knowledge graph, trusted"
 
+# Allow with expiry date
+mcp-yoshi allow memory --reason "Temporary exception" --expires 2027-01-01
+
+# Allow once only (auto-removed after first use)
+mcp-yoshi allow memory --once --reason "One-time migration"
+
 # List the allowlist
 mcp-yoshi allow --list
 
@@ -157,8 +163,37 @@ You can also configure it directly in `~/.mcp-yoshi/config.json`:
 ```json
 {
   "allowlist": [
-    { "server": "memory", "reason": "Internal knowledge graph", "addedAt": "2026-03-12T00:00:00.000Z" }
+    { "server": "memory", "reason": "Internal knowledge graph", "addedAt": "2026-03-12T00:00:00.000Z" },
+    { "server": "temp-srv", "reason": "Migration", "expires": "2026-12-31", "allowOnce": true }
   ]
+}
+```
+
+### SIEM Export
+
+Export blocked events in SIEM-compatible formats:
+
+```bash
+# JSONL format (Splunk, Datadog)
+mcp-yoshi export --format jsonl --days 30
+
+# CEF format (ArcSight, QRadar)
+mcp-yoshi export --format cef
+
+# ECS format (Elastic)
+mcp-yoshi export --format ecs
+```
+
+### Project-Level Severity Override
+
+Create `.mcp-yoshi.json` in a project root to override severity per-project:
+
+```json
+{
+  "severity": {
+    "BLOCK": ["apiKeys", "privateKeys"],
+    "WARN": ["highEntropy"]
+  }
 }
 ```
 
