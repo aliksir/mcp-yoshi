@@ -268,22 +268,26 @@ function formatOutput(result, direction) {
   };
 }
 
-function writeNekoHqStats(severity, direction, serverName, findingsCount) {
+function writeNekoHqStats(severity, direction, serverName, findingsCount, durationMs) {
   try {
     const nekoHqDir = path.join(os.homedir(), '.neko-hq');
     fs.mkdirSync(nekoHqDir, { recursive: true });
     const entry = JSON.stringify({
+      schema_version: '1.1',
       tool: 'mcp-yoshi',
       command: direction,
       ts: new Date().toISOString(),
+      duration_ms: durationMs,
+      exit_code: severity === 'BLOCK' ? 1 : 0,
       severity: severity.toLowerCase(),
-      summary: { server: serverName, findings: findingsCount, blocked: severity === 'BLOCK' ? 1 : 0 },
+      summary: { server: serverName, findings: findingsCount, blocked: severity === 'BLOCK' ? 1 : 0, warned: severity === 'WARN' ? 1 : 0 },
     });
     fs.appendFileSync(path.join(nekoHqDir, 'stats.jsonl'), entry + '\n', 'utf8');
   } catch { /* exit handler must not throw */ }
 }
 
 async function run(direction) {
+  const startTime = Date.now();
   let config = loadConfig();
   const projectConfig = loadProjectConfig();
   if (projectConfig) config = mergeProjectConfig(config, projectConfig);
@@ -388,7 +392,7 @@ async function run(direction) {
 
   // neko-hq stats 書き込み（BLOCK/WARN のみ）
   if (result.severity === 'BLOCK' || result.severity === 'WARN') {
-    writeNekoHqStats(result.severity, direction, result.server, result.findings.length);
+    writeNekoHqStats(result.severity, direction, result.server, result.findings.length, Date.now() - startTime);
   }
 
   if (output && output.json) {
