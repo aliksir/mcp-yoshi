@@ -10,7 +10,7 @@ const CHECKS = {
       // AWS
       /AKIA[0-9A-Z]{16}/,
       // OpenAI / Anthropic
-      /sk-[a-zA-Z0-9_-]{20,}/,
+      /\bsk-[a-zA-Z0-9_-]{20,}/,
       // GitHub
       /gh[ps]_[A-Za-z0-9_]{36,}/,
       /gho_[A-Za-z0-9_]{36,}/,

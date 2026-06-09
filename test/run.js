@@ -41,6 +41,21 @@ const allOutbound = { apiKeys: true, privateKeys: true, highEntropy: true, envVa
   const apiKeyFindings = r.filter((f) => f.id === 'OUT-001');
   assert(apiKeyFindings.length === 0, 'OUT-001: Normal text passes');
 }
+{
+  const r = runOutboundChecks('Install pii-mask-yoshi-mcp-pii-masking from npm', allOutbound);
+  const apiKeyFindings = r.filter((f) => f.id === 'OUT-001');
+  assert(apiKeyFindings.length === 0, 'OUT-001: URL slug "mask-yoshi-..." not false positive');
+}
+{
+  const r = runOutboundChecks('flask-session-backend-key-manager-extended', allOutbound);
+  const apiKeyFindings = r.filter((f) => f.id === 'OUT-001');
+  assert(apiKeyFindings.length === 0, 'OUT-001: hyphenated slug "flask-session-..." not false positive');
+}
+{
+  const r = runOutboundChecks('"sk-proj-aaaabbbbccccddddeeee1234"', allOutbound);
+  const apiKeyFindings = r.filter((f) => f.id === 'OUT-001');
+  assert(apiKeyFindings.length > 0, 'OUT-001: API key in quotes still detected');
+}
 
 // OUT-002: Private Keys
 {

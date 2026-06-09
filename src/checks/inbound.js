@@ -306,7 +306,7 @@ const CHECKS = {
       const findings = [];
       const patterns = {
         'AWS Access Key': /AKIA[0-9A-Z]{16}/,
-        'OpenAI/Anthropic API Key': /sk-[a-zA-Z0-9_-]{20,}/,
+        'OpenAI/Anthropic API Key': /\bsk-[a-zA-Z0-9_-]{20,}/,
         'GitHub Token': /gh[pos]_[A-Za-z0-9_]{36,}/,
         'GitLab Token': /glpat-[a-zA-Z0-9_-]{20,}/,
         'Slack Token': /xox[bpas]-[0-9a-zA-Z-]{10,}/,

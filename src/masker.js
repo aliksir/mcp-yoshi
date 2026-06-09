@@ -6,7 +6,7 @@
 // NOTE: IN-014 パターン（src/checks/inbound.js）を更新する場合、このファイルも同時に更新すること（DRY 許容、§3.7）
 const CREDENTIAL_PATTERNS = [
   /AKIA[0-9A-Z]{16}/g,
-  /sk-[a-zA-Z0-9_-]{20,}/g,
+  /\bsk-[a-zA-Z0-9_-]{20,}/g,
   /gh[pos]_[A-Za-z0-9_]{36,}/g,
   /glpat-[a-zA-Z0-9_-]{20,}/g,
   /xox[bpas]-[0-9a-zA-Z-]{10,}/g,
